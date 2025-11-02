@@ -1,0 +1,40 @@
+Tell me which of these you want prioritized next:
+A — Full local same-machine two-player (one window, two control schemes) with user-configurable fire keys.
+B — Responsive / fullscreen scaling so the map fills the browser window while keeping input mapping correct.
+C — Improve bots: add simple AI (move toward nearest human and occasionally throw).
+D — Any UI polish you'd like on the home screen (styling, nicer selectors, name for each local player).
+Immediate next steps I can take (pick one or more)
+
+If you want A: I'll implement multiple sockets from one client, wire WASD+Space for player1 and ArrowKeys+Enter for player2 by default, and add UI to pick keys.
+If you want B: I'll implement a camera (scale + translate) and map mouse coordinates correctly to world coords—this will also make the canvas effectively full-screen while keeping the internal MAP_WIDTH/MAP_HEIGHT.
+If you want C: I'll add a simple server AI for bots (move/throw).
+If you want D: I'll style the home modal/inputs.
+Quick verification checklist I will run after your OK and logs:
+
+Start frontend dev server — check for module errors (PASS/FAIL).
+Start backend dev server — check for startup message (PASS/FAIL).
+Open game in browser — verify canvas loads, left-click fires, players cannot walk through obstacles (manual test).
+If bots chosen — verify bots appear in player list after Start.
+If you want me to implement local 2-player next, say "Do A" (or "A then B" etc.). If you paste the fresh dev-server logs I can confirm the build errors are gone and continue immediately.
+
+
+If the dev servers start cleanly, I can:
+A — Implement local 2-player on same screen (two sockets + separate controls).
+B — Add bot AI (move & shoot randomly/target nearest player).
+C — Implement responsive/fullscreen scaling and correct mouse->world mapping.
+D — Polish home screen UI.
+
+
+When playing against bots, when I kill one bot, the game ends, but I want when all the bots or player is dead then the game end and player or bots wins. Also, I want the game to supports two real players against the bots.
+
+
+I need option to return back to the main screen.
+
+
+
+git init
+git add -A
+git commit -m "Initial Snowball Fight project"
+git branch -M main
+git remote add origin https://github.com/<your-username>/<your-repo>.git
+git push -u origin main
