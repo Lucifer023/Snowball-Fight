@@ -9,23 +9,28 @@ Goal: open two browser tabs to `http://localhost:3000` and see two players move 
 
 Quick run (from repo root):
 
-1. Install dependencies for backend and frontend separately:
+1. Install dependencies for backend and frontend separately (run these from the repository root):
 
 ```powershell
-cd "c:\Users\Marko\Desktop\Projekat browser igra\backend"; npm install
-cd "c:\Users\Marko\Desktop\Projekat browser igra\frontend"; npm install
+cd backend
+npm install
+
+cd ../frontend
+npm install
 ```
 
-2. Start backend (port 3001) in dev mode:
+2. Start backend (port 3001) in dev mode (from repo root or inside the `backend/` folder):
 
 ```powershell
-cd "c:\Users\Marko\Desktop\Projekat browser igra\backend"; npm run dev
+cd backend
+npm run dev
 ```
 
-3. Start frontend (Next.js dev):
+3. Start frontend (Next.js dev) (from repo root or inside the `frontend/` folder):
 
 ```powershell
-cd "c:\Users\Marko\Desktop\Projekat browser igra\frontend"; npm run dev
+cd frontend
+npm run dev
 ```
 
 4. Open `http://localhost:3000` in two tabs.
