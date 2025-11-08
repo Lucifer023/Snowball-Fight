@@ -20,6 +20,7 @@ export default function GameCanvas() {
     const myIdRef = useRef<string | null>(null);
   const [started, setStarted] = useState(false);
   const [botCount, setBotCount] = useState<number>(0);
+  const [localPlayers, setLocalPlayers] = useState<number>(1);
   const [playerName, setPlayerName] = useState<string>(() => (typeof window !== 'undefined' ? localStorage.getItem('snowball_name') || 'Player' : 'Player'));
   const [playerColor, setPlayerColor] = useState<string>(() => (typeof window !== 'undefined' ? localStorage.getItem('snowball_color') || '#2f9cff' : '#2f9cff'));
   const [mounted, setMounted] = useState(false);
@@ -509,7 +510,7 @@ export default function GameCanvas() {
           <h2>Snowball Fight</h2>
           <div style={{ marginBottom: 8 }}>
             <label style={{ display: 'block', marginBottom: 4 }}>Name</label>
-            <input value={playerName} onChange={(e) => setPlayerName(e.target.value)} style={{ width: '100%', padding: 8 }} />
+            <input value={playerName} onChange={(e) => setPlayerName(e.target.value)} style={{ width: '100%', padding: 8, background: '#fff', color: '#111', borderRadius: 4, border: '1px solid rgba(0,0,0,0.12)' }} />
           </div>
           <div style={{ marginBottom: 8 }}>
             <label style={{ display: 'block', marginBottom: 4 }}>Color</label>
@@ -526,14 +527,14 @@ export default function GameCanvas() {
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <label style={{ color: '#ddd' }}>Local players</label>
-              <select value={1} onChange={() => {}} style={{ padding: 6 }} disabled>
+              <select value={localPlayers} onChange={(e) => setLocalPlayers(Number(e.target.value))} style={{ padding: 6, width: 80, background: '#fff', color: '#111', borderRadius: 4, border: '1px solid rgba(0,0,0,0.12)' }}>
                 <option value={1}>1</option>
                 <option value={2}>2</option>
               </select>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <label style={{ color: '#ddd' }}>Bots</label>
-              <select value={botCount} onChange={(e) => setBotCount(Number(e.target.value))} style={{ padding: 6 }}>
+              <select value={botCount} onChange={(e) => setBotCount(Number(e.target.value))} style={{ padding: 6, width: 80, background: '#fff', color: '#111', borderRadius: 4, border: '1px solid rgba(0,0,0,0.12)' }}>
                 <option value={0}>0</option>
                 <option value={1}>1</option>
                 <option value={2}>2</option>
