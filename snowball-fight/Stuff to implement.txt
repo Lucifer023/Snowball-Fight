@@ -29,3 +29,193 @@ When playing against bots, when I kill one bot, the game ends, but I want when a
 
 
 I need option to return back to the main screen.
+
+To save data in real database.
+
+
+Show Leaderboard is not working, error:
+
+Access to fetch at 'http://localhost:3001/leaderboard' from origin 'http://localhost:3000' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.
+GameCanvas.tsx:609  GET http://localhost:3001/leaderboard net::ERR_FAILED 200 (OK)
+onClick @ GameCanvas.tsx:609
+callCallback @ react-dom.development.js:19467
+invokeGuardedCallbackImpl @ react-dom.development.js:19516
+invokeGuardedCallback @ react-dom.development.js:19591
+invokeGuardedCallbackAndCatchFirstError @ react-dom.development.js:19605
+executeDispatch @ react-dom.development.js:30661
+processDispatchQueueItemsInOrder @ react-dom.development.js:30693
+processDispatchQueue @ react-dom.development.js:30706
+dispatchEventsForPlugins @ react-dom.development.js:30717
+eval @ react-dom.development.js:30907
+batchedUpdates$1 @ react-dom.development.js:23771
+batchedUpdates @ react-dom.development.js:27623
+dispatchEventForPluginEventSystem @ react-dom.development.js:30906
+dispatchEvent @ react-dom.development.js:28679
+dispatchDiscreteEvent @ react-dom.development.js:28650
+(index):1 Access to fetch at 'http://localhost:3001/leaderboard' from origin 'http://localhost:3000' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.
+GameCanvas.tsx:609  GET http://localhost:3001/leaderboard net::ERR_FAILED 200 (OK)
+
+Main screen needs to be prettier.
+
+When setting local players to two, cannot set name for other player, just for one. Needs to add that both players can then choose color and name.
+
+Controls button is not working, when I click, it does nothing.
+
+
+On WASD I control one player, but on arrows I control both of them and also if the window is smaller and have slider on the one or all sides (bottom, top, right, left) with arrows I am moving that.
+First need to fix the screen to be same as user window, to adjust based on that.
+
+For some reason when I am clicking with mouse on the screen and fire, at one moment the yellow rectangle spawn, I do not know why. Need to be removed. (Picture of that is in folder pictureErrors).
+
+If I am in game and have green color selected for player, then click on Main menu in top left corner and again start the game, player color can change, if I fire before going to main menu, when I enter back I can again see those snowballs.
+Think about it, how to solve and what can we do about it. Maybe going to main menu will ask if we want to quit current game, restart the one that we are playing right now.
+
+If I throw snowball with space then some green lines go from player. Give AI the picture to see it.
+
+
+Bot now can go through obstacles, I do not want that. Also, implement that bot can dodge snowball, not always but sometimes.
+
+Implement shield drop on the map, where it can be picked up and also shield have health bar, if the player/bot is stricken by snowball on the side where the shield is, then health bar of the shield is affected, if he is hit on the side where he does not have shield, then the health bar of the player is hit.
+
+There could be items that players can pick up, such as a shield or a speed boost that lasts for a certain period of time — or in the case of the shield, until it gets destroyed.
+A timer option, so the game can be played with or without a timer. Players could choose whether they want to play with a timer of 60/120/180/240/300 seconds, or even set a custom duration, or play without any time limit.
+A separate modal or screen where the player could choose these options. It’s worth considering how to organize that layout.
+The AI shouldn’t move directly toward the player in a straight line; it should have a more natural or smarter movement mechanic.
+There could be a power-up that slows down opponents’ movement speed when picked up. If it’s a player vs player or player vs bots game, the effect would slow down whichever side didn’t pick it up — either the player or the bots, depending on who collected it.
+Power-ups could disappear after some time if they’re not picked up.
+A power-up that creates a new obstacle, but it shouldn’t appear directly on top of the player — instead, it should spawn in an empty area of the map.
+A power-up that darkens the entire screen — this could be tested to see if it’s interesting or makes sense for gameplay.
+Perk that give health to player. Triple Throw – allows throwing three snowballs at once for a short time.
+Homing Snowball – a snowball that slightly adjusts its path to follow a nearby opponent. It can be a someting that player can pickup from ground, all those can be pickup from ground and they will spawn randomly on the map and last for some time on the map if they are not pickedup.
+Power-ups disappear after a set time if not collected.
+
+AI Improvements
+
+AI should not move in a straight line directly toward the player.
+
+It should include smarter movement, such as:
+
+Dodging incoming snowballs.
+
+Hiding behind obstacles.
+
+Collecting power-ups strategically.
+
+Predicting player movement for more accurate throws.
+
+Set prettier for formatting.
+
+Map & Environment Ideas
+
+Dynamic Snow Terrain – snow deforms where snowballs hit or where players walk.
+
+Weather Effects – snowstorms can randomly reduce visibility.
+
+Day/Night Cycle – affects visibility and ambiance.
+
+Slippery Ice Zones – harder to control movement.
+
+Moving Obstacles – like rolling snowballs or falling snow piles.
+
+Game Modes
+
+Classic Battle – Last player standing wins.
+
+Timed Match – Most hits or kills within a time limit wins.
+
+Capture the Snow Fort – Control a central area for a certain time.
+
+Team Battle – 2v2 or 3v3 matches.
+
+Survival Mode – One player vs waves of bots.
+
+Other Fun Ideas
+
+Cosmetic rewards: hats, scarves, gloves, skins unlocked by winning matches.
+
+Taunts/emotes: short animations when you hit or dodge an enemy.
+
+Snowball crafting: charge up snowballs to make bigger, slower, but stronger throws.
+
+Combo system: hitting multiple times in a row increases score or damage multiplier.
+
+
+Things to do after everything is setup for the first phase:
+
+Focus on what makes it fun and satisfying:
+
+Improve animations and sounds.
+
+Add small effects:
+
+Screen shake or vibration when hit.
+
+Snow particle explosion when a snowball hits.
+
+Cooldown or reload visuals.
+
+Refine collision detection and physics so snowballs feel “weighty”.
+
+Add User Interface (UI) & UX Polish
+
+Make the game feel complete:
+
+Main Menu, Settings, Pause, Restart, and Exit.
+
+Health bars and power-up indicators.
+
+Timer and score display.
+
+Clear win/lose screen with options to play again.
+
+Better organize the code structure. (FIRST IMPORTANT AND MUST).
+
+
+Then move to online multiplayer
+
+Balancing & Difficulty Levels
+
+Add AI difficulty modes (easy, medium, hard).
+
+Tune damage, movement speed, and spawn rates.
+
+Balance power-ups — make sure none dominate the gameplay.
+
+Visual Identity
+
+Design a simple logo, menu background, and maybe character icons.
+
+Choose a consistent art style (cartoonish, low-poly, pixel-art, etc.)
+
+Add themed maps (forest, village, mountain).
+
+Public Alpha / Beta Release
+
+When it’s fun and stable:
+
+Upload to itch.io, Steam (early access), or share as a web build.
+
+Collect player feedback and crash reports.
+
+Watch gameplay videos to understand how people really play.
+
+Next Development Phase (Phase 2)
+
+Depending on your direction:
+
+Add progression (levels, ranks, unlocks).
+
+Add new abilities / snowball types.
+
+Improve AI learning.
+
+Expand to mobile version or multiplayer ranking system.
+
+By default it takes for now name Marko, but I would like that player can enter the name for himself, maybe in future to
+save names.
+
+Leaderboard option is not that visible.
+
+I now do not have that button on the main menu for seeing the controls.
+
+Main menu is on top of the payer info. Fix it.

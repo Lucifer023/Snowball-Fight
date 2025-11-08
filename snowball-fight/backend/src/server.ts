@@ -14,6 +14,7 @@ interface Player {
   score: number;
   name?: string;
   color?: string;
+  isBot?: boolean;
 }
 
 interface Snowball {
@@ -137,11 +138,12 @@ io.on('connection', (socket) => {
     while (created < count) {
       const botId = `bot_${Date.now()}_${idx}`;
       const pos = randomPos();
-      const bot: Player = { id: botId, x: pos.x, y: pos.y, health: 100, score: 0, name: `Bot${idx}`, color: '#888' };
+      const bot: Player = { id: botId, x: pos.x, y: pos.y, health: 100, score: 0, name: `Bot${idx}`, color: '#888', isBot: true };
       players.set(botId, bot);
       created++;
       idx++;
     }
+    // inform clients about newly created bots
     io.emit('playerJoined', Array.from(players.values()).slice(-count));
   });
 
@@ -217,6 +219,51 @@ io.on('connection', (socket) => {
 // Simple game loop
 const TICK = 1000 / 30;
 setInterval(() => {
+  // simple bot AI: move toward nearest human and occasionally throw
+  const bots = Array.from(players.values()).filter((p) => p.isBot);
+  const humans = Array.from(players.values()).filter((p) => !p.isBot);
+  for (const bot of bots) {
+    if (humans.length === 0) break;
+    // find nearest human
+    let target = humans[0];
+    let best = Number.POSITIVE_INFINITY;
+    for (const h of humans) {
+      const dx = h.x - bot.x;
+      const dy = h.y - bot.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < best) {
+        best = d2;
+        target = h;
+      }
+    }
+    // move toward target
+    const bSpeed = 1.8; // slower than player
+    try {
+      const dx = target.x - bot.x;
+      const dy = target.y - bot.y;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      bot.x += (dx / len) * bSpeed;
+      bot.y += (dy / len) * bSpeed;
+      // occasionally throw when within a reasonable range
+      if (Math.random() < 0.02) {
+        const speed = 6;
+        const vx = (dx / len) * speed;
+        const vy = (dy / len) * speed;
+        const sb: Snowball = {
+          id: `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+          x: bot.x,
+          y: bot.y,
+          vx,
+          vy,
+          ownerId: bot.id,
+        };
+        snowballs.push(sb);
+        io.emit('snowballCreated', { id: sb.id, x: sb.x, y: sb.y });
+      }
+    } catch (e) {
+      // swallow AI errors
+    }
+  }
   // update snowballs
   for (let i = snowballs.length - 1; i >= 0; i--) {
     const sb = snowballs[i];
@@ -286,18 +333,68 @@ setInterval(() => {
           }
         }
 
-        if (p.health <= 0) {
-          // respawn after short delay
-          const deadId = pid;
-          setTimeout(() => {
-            const pos = randomPos();
-            const pp = players.get(deadId);
-            if (pp) {
+        // elimination-style round end when bots are present: end round when one side is eliminated
+        const botExists = Array.from(players.values()).some((pp) => pp.isBot);
+        if (botExists) {
+          const aliveBots = Array.from(players.values()).filter((pp) => pp.isBot && pp.health > 0).length;
+          const aliveHumans = Array.from(players.values()).filter((pp) => !pp.isBot && pp.health > 0).length;
+          if (aliveBots === 0 || aliveHumans === 0) {
+            let winnerName = 'Bots';
+            if (aliveBots === 0 && aliveHumans > 0) {
+              // human(s) win — choose highest-score human or first alive
+              const humansAlive = Array.from(players.values()).filter((pp) => !pp.isBot && pp.health > 0);
+              if (humansAlive.length > 0) {
+                const top = humansAlive.sort((a, b) => b.score - a.score)[0];
+                winnerName = top.name || 'Player';
+              } else {
+                winnerName = 'Player';
+              }
+            }
+            console.log('elimination round winner:', winnerName);
+            if (winnerName !== 'Bots') {
+              leaderboard[winnerName] = (leaderboard[winnerName] || 0) + 1;
+              saveLeaderboard();
+              io.emit('leaderboard', leaderboard);
+            }
+            io.emit('roundWinner', { id: owner?.id || '', name: winnerName });
+            // reset state
+            for (const [pid, pp] of players) {
+              pp.score = 0;
+              pp.health = 100;
+              const pos = randomPos();
               pp.x = pos.x;
               pp.y = pos.y;
-              pp.health = 100;
             }
-          }, 2000);
+            snowballs.length = 0;
+            obstacles.length = 0;
+            obstacles.push(...INITIAL_OBSTACLES.map((o) => ({ ...o })));
+            io.emit('state', {
+              players: Array.from(players.values()),
+              snowballs: [],
+              obstacles: obstacles.map((o) => ({ id: o.id, x: o.x, y: o.y, w: o.w, h: o.h, hp: o.hp })),
+            });
+          }
+        }
+
+        if (p.health <= 0) {
+          // if bots are present we treat this as elimination mode (no auto-respawn until round reset)
+          const botExistsNow = Array.from(players.values()).some((pp) => pp.isBot);
+          if (!botExistsNow) {
+            // respawn after short delay
+            const deadId = pid;
+            setTimeout(() => {
+              const pos = randomPos();
+              const pp = players.get(deadId);
+              if (pp) {
+                pp.x = pos.x;
+                pp.y = pos.y;
+                pp.health = 100;
+              }
+            }, 2000);
+          } else {
+            // no respawn during elimination; leave dead until end of round
+            p.health = 0;
+          }
         }
         break;
       }

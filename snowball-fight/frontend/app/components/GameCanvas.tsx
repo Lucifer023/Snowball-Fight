@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from 'react';
+import { Box, Input, Button, HStack, VStack, Portal, Select } from '@chakra-ui/react';
 import * as PIXI from 'pixi.js';
 
 type Player = { id: string; x: number; y: number; health: number; score: number; name?: string; color?: string };
@@ -249,17 +250,20 @@ export default function GameCanvas() {
     minimapGraphics.y = 10;
     app.stage.addChild(minimapGraphics);
 
-    // scoreboard (HTML overlay) — create a simple div inside the container
-    let scoreboardDiv: HTMLDivElement | null = null;
-    if (containerRef.current) {
-      scoreboardDiv = document.createElement('div');
-      scoreboardDiv.style.position = 'absolute';
-      scoreboardDiv.style.left = '10px';
-      scoreboardDiv.style.top = '10px';
-      scoreboardDiv.style.color = 'white';
-      scoreboardDiv.style.fontFamily = 'Arial, Helvetica, sans-serif';
-      scoreboardDiv.style.zIndex = '1000';
-      containerRef.current.appendChild(scoreboardDiv);
+    // scoreboard (HTML overlay) — attach to the container and keep a persistent ref so we can remove it reliably
+    const scoreboardDivRef = (window as any).__snowball_scoreboard_ref || { current: null };
+    // if an existing global ref isn't present, create one that we can reuse across mounts in dev
+    if (!(window as any).__snowball_scoreboard_ref) (window as any).__snowball_scoreboard_ref = scoreboardDivRef;
+    if (!scoreboardDivRef.current && containerRef.current) {
+      const sd = document.createElement('div');
+      sd.style.position = 'absolute';
+      sd.style.left = '10px';
+      sd.style.top = '10px';
+      sd.style.color = 'white';
+      sd.style.fontFamily = 'Arial, Helvetica, sans-serif';
+      sd.style.zIndex = '1000';
+      containerRef.current.appendChild(sd);
+      scoreboardDivRef.current = sd;
     }
 
     // selection highlight
@@ -449,10 +453,10 @@ export default function GameCanvas() {
       }
 
       // update scoreboard HTML (toggle visibility with Tab)
-      if (scoreboardDiv) {
-        try {
-          scoreboardDiv.style.display = showLeaderboard ? 'block' : 'none';
-          // show persistent leaderboard from server if available
+      try {
+        const sd = scoreboardDivRef.current as HTMLDivElement | null;
+        if (sd) {
+          sd.style.display = showLeaderboard ? 'block' : 'none';
           const lb = leaderboardRef.current;
           let html = `<div style="font-weight:bold;margin-bottom:6px">Score: ${me ? me.score : 0}</div>`;
           html += '<div style="font-size:12px">Leaderboard</div>';
@@ -469,27 +473,27 @@ export default function GameCanvas() {
             }
           }
           html += '</ol>';
-          // restart button
           html += '<div style="margin-top:8px"><button id="restartBtn">Restart Game</button></div>';
-          scoreboardDiv.innerHTML = html;
+          sd.innerHTML = html;
           const btn = document.getElementById('restartBtn');
           if (btn) {
-            btn.onclick = () => {
-              try { socketRef.current?.emit('restartGame'); } catch (e) {}
-            };
+            btn.onclick = () => { try { socketRef.current?.emit('restartGame'); } catch (e) {} };
           }
-        } catch (e) {
-          // ignore
         }
-      }
+      } catch (e) {}
     });
 
     return () => {
       try { app.destroy(true, { children: true }); } catch (e) {}
       try { socketRef.current?.disconnect(); } catch (e) {}
-      if (scoreboardDiv && containerRef.current) {
-        try { containerRef.current.removeChild(scoreboardDiv); } catch(e) {}
-      }
+      try {
+        const sd = (scoreboardDivRef && (scoreboardDivRef as any).current) as HTMLDivElement | null;
+        if (sd && containerRef.current) {
+          try { containerRef.current.removeChild(sd); } catch (e) {}
+        }
+        // clear the global ref to avoid stale DOM refs across mounts in dev
+        try { if ((window as any).__snowball_scoreboard_ref) (window as any).__snowball_scoreboard_ref.current = null; } catch (e) {}
+      } catch (e) {}
   window.removeEventListener('keydown', onTabKey);
   window.removeEventListener('keydown', keydownHandler);
   window.removeEventListener('keyup', keyupHandler);
