@@ -15,6 +15,7 @@ const MAP_HEIGHT = Number(process.env.NEXT_PUBLIC_MAP_HEIGHT) || 900;
 export default function GameCanvas() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const socketRef = useRef<any>(null);
+  const botsRequestedRef = useRef<number | null>(null);
   const appRef = useRef<PIXI.Application | null>(null);
   const stateRef = useRef<{ players: Player[]; snowballs: Snowball[]; obstacles?: Obstacle[] }>({ players: [], snowballs: [], obstacles: [] });
     const myIdRef = useRef<string | null>(null);
@@ -132,11 +133,15 @@ export default function GameCanvas() {
             stateRef.current.snowballs = [...stateRef.current.snowballs, sb];
           }
         });
-        // if user requested bots, ask the server to spawn them shortly after connect
-        if (botCount && botCount > 0) {
-          setTimeout(() => {
-            try { socket.emit('addBots', { count: botCount }); } catch (e) {}
-          }, 300);
+        // if user requested bots, ask the server to spawn them shortly after connect.
+        // Use a ref so we only request a given target once (avoid cumulative spawns on reconnect/hot-reload).
+        if ((botCount || 0) > 0) {
+          if (botsRequestedRef.current !== botCount) {
+            botsRequestedRef.current = botCount;
+            setTimeout(() => {
+              try { socket.emit('addBots', { count: botCount }); } catch (e) {}
+            }, 300);
+          }
         }
       } catch (err) {
         console.error('failed to load socket.io-client in the browser', err);

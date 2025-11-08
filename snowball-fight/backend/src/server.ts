@@ -132,19 +132,35 @@ io.on('connection', (socket) => {
 
   // allow clients to request bot spawns (simple server-side bots/AI)
   socket.on('addBots', (data: { count: number }) => {
-    const count = Math.max(0, Math.min(6, data.count || 0));
-    let created = 0;
-    let idx = 1;
-    while (created < count) {
-      const botId = `bot_${Date.now()}_${idx}`;
-      const pos = randomPos();
-      const bot: Player = { id: botId, x: pos.x, y: pos.y, health: 100, score: 0, name: `Bot${idx}`, color: '#888', isBot: true };
-      players.set(botId, bot);
-      created++;
-      idx++;
+    // Treat the requested count as an absolute target. Create or remove bots
+    // so that the total number of bots on the server matches the requested value.
+  const target = Math.max(0, Math.min(6, data.count || 0));
+  const existingBots = Array.from(players.values()).filter((p) => p.isBot);
+  console.log(`addBots requested: target=${target}, existing=${existingBots.length}`);
+    const existingCount = existingBots.length;
+    if (existingCount < target) {
+      const toCreate = target - existingCount;
+      const newBots: Player[] = [];
+      for (let i = 0; i < toCreate; i++) {
+        const botId = `bot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const pos = randomPos();
+        const bot: Player = { id: botId, x: pos.x, y: pos.y, health: 100, score: 0, name: `Bot${existingCount + i + 1}`, color: '#888', isBot: true };
+        players.set(botId, bot);
+        newBots.push(bot);
+      }
+      // emit each bot join individually for client compatibility
+      for (const b of newBots) io.emit('playerJoined', b);
+      console.log(`created ${newBots.length} bot(s), now total bots=${Array.from(players.values()).filter(p=>p.isBot).length}`);
+    } else if (existingCount > target) {
+      const toRemove = existingCount - target;
+      // remove the oldest bots first (stable behavior)
+      const botsToRemove = existingBots.slice(0, toRemove);
+      for (const b of botsToRemove) {
+        players.delete(b.id);
+        io.emit('playerLeft', { id: b.id });
+      }
+      console.log(`removed ${toRemove} bot(s), now total bots=${Array.from(players.values()).filter(p=>p.isBot).length}`);
     }
-    // inform clients about newly created bots
-    io.emit('playerJoined', Array.from(players.values()).slice(-count));
   });
 
   socket.on('setName', (name: string) => {
