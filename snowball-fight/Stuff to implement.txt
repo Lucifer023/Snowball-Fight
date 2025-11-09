@@ -44,142 +44,166 @@ invokeGuardedCallback @ react-dom.development.js:19591
 invokeGuardedCallbackAndCatchFirstError @ react-dom.development.js:19605
 executeDispatch @ react-dom.development.js:30661
 processDispatchQueueItemsInOrder @ react-dom.development.js:30693
-processDispatchQueue @ react-dom.development.js:30706
-dispatchEventsForPlugins @ react-dom.development.js:30717
-eval @ react-dom.development.js:30907
-batchedUpdates$1 @ react-dom.development.js:23771
-batchedUpdates @ react-dom.development.js:27623
-dispatchEventForPluginEventSystem @ react-dom.development.js:30906
-dispatchEvent @ react-dom.development.js:28679
-dispatchDiscreteEvent @ react-dom.development.js:28650
-(index):1 Access to fetch at 'http://localhost:3001/leaderboard' from origin 'http://localhost:3000' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.
-GameCanvas.tsx:609  GET http://localhost:3001/leaderboard net::ERR_FAILED 200 (OK)
+PROJECT: Snowball Fight — Implementation Notes & Roadmap
+ 
+Last updated: 2025-11-09
+ 
+Overview
+--------
+A single-file, concise roadmap for the game's near-term priorities, fixes, and feature backlog. Sections are: Priorities, Immediate next steps (pick one), Bugs & fixes, Features (short/long term), AI & gameplay, UX/UI polish, Backend & persistence, Testing & verification, and Next milestones.
 
-Main screen needs to be prettier.
+Priorities (pick one or more to work on next)
+-------------------------------------------
+A — Local 2-player (same machine)
+	- Support two local players in the same browser window with two control schemes.
+	- Default controls: Player 1 = WASD + Space; Player 2 = Arrows + Enter (configurable in UI).
+	- Each player should have independent name and color inputs.
 
-When setting local players to two, cannot set name for other player, just for one. Needs to add that both players can then choose color and name.
+B — Responsive / Fullscreen scaling
+	- Implement camera (scale + translate) so the map fills the browser window while keeping input mapping correct.
+	- Map mouse/window coordinates to world coordinates reliably at different resolutions and aspect ratios.
 
-Controls button is not working, when I click, it does nothing.
+C — Improve bots (AI)
+	- Add server-side simple AI: move toward nearest human, avoid obstacles, occasionally throw.
+	- Add avoidance/dodging and obstacle-aware movement in later iteration.
 
+D — Home-screen UI polish
+	- Improve layout, styling and accessibility of the main menu and options.
+	- Make controls, leaderboard, and settings more visible and usable.
 
-On WASD I control one player, but on arrows I control both of them and also if the window is smaller and have slider on the one or all sides (bottom, top, right, left) with arrows I am moving that.
-First need to fix the screen to be same as user window, to adjust based on that.
+Immediate next steps (choose one or more)
+-----------------------------------------
+- If you want A: implement local 2-player (multiple sockets or client-side dual-actor model), add key mapping UI for both players.
+- If you want B: implement camera scaling and mouse->world mapping; ensure canvas resizes to fill available viewport.
+- If you want C: implement simple server bot AI (pathing toward nearest player, occasional throws).
+- If you want D: layout and style the main menu; add visible buttons for Controls, Leaderboard, Settings.
 
-For some reason when I am clicking with mouse on the screen and fire, at one moment the yellow rectangle spawn, I do not know why. Need to be removed. (Picture of that is in folder pictureErrors).
+Bugs & Critical Fixes
+---------------------
+- CORS on leaderboard: backend needs Access-Control-Allow-Origin set (or use a proxy) so frontend can fetch `http://localhost:3001/leaderboard` from `http://localhost:3000`/dev server.
+	- Quick fix: enable CORS in backend (allow http://localhost:3000 or *)
 
-If I am in game and have green color selected for player, then click on Main menu in top left corner and again start the game, player color can change, if I fire before going to main menu, when I enter back I can again see those snowballs.
-Think about it, how to solve and what can we do about it. Maybe going to main menu will ask if we want to quit current game, restart the one that we are playing right now.
+- Home menu overlay issues:
+	- Main menu overlaps player info — adjust z-index / layout so main menu doesn't hide key UI.
+	- "Show Leaderboard" button not visible on main screen — make it a primary action on the home modal.
 
-If I throw snowball with space then some green lines go from player. Give AI the picture to see it.
+- Local players UI:
+	- When local players = 2, allow both players to input name and pick color (currently only one name).
+	- Add UI for player-specific name/color, store both in localStorage keys like `snowball_name_1`, `snowball_name_2`.
 
+- Controls button not working: check click handler and ensure modal toggles; add unit test for button wiring.
 
-Bot now can go through obstacles, I do not want that. Also, implement that bot can dodge snowball, not always but sometimes.
+- Input focus/scrolling issues:
+	- Arrow keys move the browser scrollbar when the canvas is smaller than the window; implement a camera that matches screen size or call `preventDefault()` for key handlers when the canvas is focused.
 
-Implement shield drop on the map, where it can be picked up and also shield have health bar, if the player/bot is stricken by snowball on the side where the shield is, then health bar of the shield is affected, if he is hit on the side where he does not have shield, then the health bar of the player is hit.
+- Unexpected yellow rectangle spawn when firing: investigate debug drawing or leftover PIXI shape being drawn — see `pictureErrors/` for screenshot. Remove debug visuals or gate them behind a debug flag.
 
-There could be items that players can pick up, such as a shield or a speed boost that lasts for a certain period of time — or in the case of the shield, until it gets destroyed.
-A timer option, so the game can be played with or without a timer. Players could choose whether they want to play with a timer of 60/120/180/240/300 seconds, or even set a custom duration, or play without any time limit.
-A separate modal or screen where the player could choose these options. It’s worth considering how to organize that layout.
-The AI shouldn’t move directly toward the player in a straight line; it should have a more natural or smarter movement mechanic.
-There could be a power-up that slows down opponents’ movement speed when picked up. If it’s a player vs player or player vs bots game, the effect would slow down whichever side didn’t pick it up — either the player or the bots, depending on who collected it.
-Power-ups could disappear after some time if they’re not picked up.
-A power-up that creates a new obstacle, but it shouldn’t appear directly on top of the player — instead, it should spawn in an empty area of the map.
-A power-up that darkens the entire screen — this could be tested to see if it’s interesting or makes sense for gameplay.
-Perk that give health to player. Triple Throw – allows throwing three snowballs at once for a short time.
-Homing Snowball – a snowball that slightly adjusts its path to follow a nearby opponent. It can be a someting that player can pickup from ground, all those can be pickup from ground and they will spawn randomly on the map and last for some time on the map if they are not pickedup.
-Power-ups disappear after a set time if not collected.
+- Snowballs persisting across restarts/main menu: when leaving the game, ensure the PIXI app and socket state are fully cleaned up; optionally prompt user to confirm leaving the current game and restart the scene.
 
-AI Improvements
+- Bots walking through obstacles: collision detection for bots must be enforced (same system as players). Prevent bots from overlapping obstacle bounding boxes.
 
-AI should not move in a straight line directly toward the player.
+Performance / Lag
+-----------------
+- If you observe lag when multiple entities are present:
+	- Profile CPU usage, page paint and JS event loop.
+	- Reduce PIXI draw calls, reuse Graphics objects, and ensure `app.ticker` is not running while paused.
+	- Limit spawn frequency for snowball effects and particle animations.
 
-It should include smarter movement, such as:
+Gameplay & Features backlog
+---------------------------
+Short-term (implement during Phase 1):
+- Shield item: spawns on map, can be picked up. Shield has its own HP; hits on shield reduce shield HP, hits on unshielded side reduce player HP.
+- Speed boost item: temporary boost of movement speed.
+- Timer option for matches (60/120/180/240/300s or custom/none).
+- Local 2-player support (A above). Make UI for player-specific settings.
+- Team modes: 2v2 local or bots.
 
-Dodging incoming snowballs.
+Mid-term:
+- Power-ups: spawn randomly, disappear after timeout, include homing snowball, triple throw, screen-darkening item.
+- Better AI: dodging, hiding behind obstacles, collecting power-ups, predicting movement.
+- HUD improvements: FPS/milliseconds counter, player's inventory, active power-ups.
 
-Hiding behind obstacles.
+Long-term:
+- Dynamic terrain, weather effects, moving obstacles, extra maps.
+- Online multiplayer with matchmaking and persistence.
 
-Collecting power-ups strategically.
+AI / Bot improvements
+---------------------
+- Phase 1: simple behavior
+	- Move toward nearest human player while avoiding overlapping obstacles; throw occasionally at a predicted location.
 
-Predicting player movement for more accurate throws.
+- Phase 2: intermediate behavior
+	- Dodging logic (when incoming snowball predicted to collide), hiding near obstacles, collecting power-ups.
 
-Set prettier for formatting.
+- Phase 3: advanced behavior
+	- Smarter prediction, team play, difficulty levels (easy/medium/hard).
 
-Map & Environment Ideas
+UX / UI Polishing
+-----------------
+- Main menu: clearer layout with buttons for Start, Controls, Leaderboard, Settings, Quit.
+- Controls modal: show current key mapping and allow remapping per player.
+- Player setup: if Local players > 1 show separate rows for each player's name & color.
+- Leaderboard: fix CORS and improve visibility and position.
+- Add a small persistent FPS/latency readout (top-right) for debugging.
 
-Dynamic Snow Terrain – snow deforms where snowballs hit or where players walk.
+Backend & Persistence
+---------------------
+- Leaderboard endpoint currently blocked by CORS — add CORS headers on backend.
+- Consider moving leaderboard to a real DB (SQLite or PostgreSQL) instead of `data/leaderboard.json` for persistence and concurrency.
+- Add endpoints for saving match results and querying top scores.
 
-Weather Effects – snowstorms can randomly reduce visibility.
+Testing & Verification
+----------------------
+Quick verification checklist (run after changes):
+- Start frontend dev server — check for module errors (PASS/FAIL).
+- Start backend dev server — check for startup message (PASS/FAIL).
+- Open game in browser — verify canvas loads and Start Game mounts the canvas.
+- Verify both local players can control distinct players if A implemented.
+- If bots are enabled — verify bots appear and observe basic bot behavior.
 
-Day/Night Cycle – affects visibility and ambiance.
+Developer Notes
+---------------
+- When cleaning up the game (leaving to menu) ensure sockets are disconnected and PIXI app destroyed to avoid leftover listeners/objects.
+- Use `window.requestAnimationFrame`/PIXI ticker conservatively; stop ticker when modal open.
+- Keep collision detection centralized so both bots and players use the same checks.
 
-Slippery Ice Zones – harder to control movement.
+Milestones
+----------
+Phase 1 (MVP):
+- Local 2-player support (A)
+- Responsive fullscreen scaling (B)
+- Simple bot AI and basic item pickups (C)
+- Polished main menu, controls modal, and leaderboard CORS fix (D + backend)
 
-Moving Obstacles – like rolling snowballs or falling snow piles.
+Phase 2:
+- Improved bot AI, power-ups, timer modes, HUD polish, performance optimizations.
 
-Game Modes
+Phase 3:
+- Online multiplayer, persistence, release polish, extra maps and modes.
 
-Classic Battle – Last player standing wins.
+Next actions for me (pick one):
+- "Do A" — implement Local 2-player (controls + UI) now.
+- "Do B" — implement responsive fullscreen scaling and mouse->world mapping.
+- "Do C" — implement simple server-side bot AI.
+- "Do D" — polish home screen UI and fix the referenced bugs (controls button, leaderboard visibility).
 
-Timed Match – Most hits or kills within a time limit wins.
+If you want, paste the latest terminal logs for the dev servers and I will begin the chosen task and run the verification checklist.
 
-Capture the Snow Fort – Control a central area for a certain time.
-
-Team Battle – 2v2 or 3v3 matches.
-
-Survival Mode – One player vs waves of bots.
-
-Other Fun Ideas
-
-Cosmetic rewards: hats, scarves, gloves, skins unlocked by winning matches.
-
-Taunts/emotes: short animations when you hit or dodge an enemy.
-
-Snowball crafting: charge up snowballs to make bigger, slower, but stronger throws.
-
-Combo system: hitting multiple times in a row increases score or damage multiplier.
-
-
-Things to do after everything is setup for the first phase:
-
-Focus on what makes it fun and satisfying:
-
-Improve animations and sounds.
-
-Add small effects:
-
-Screen shake or vibration when hit.
-
-Snow particle explosion when a snowball hits.
-
-Cooldown or reload visuals.
-
-Refine collision detection and physics so snowballs feel “weighty”.
-
-Add User Interface (UI) & UX Polish
-
-Make the game feel complete:
-
-Main Menu, Settings, Pause, Restart, and Exit.
-
-Health bars and power-up indicators.
-
-Timer and score display.
-
-Clear win/lose screen with options to play again.
-
-Better organize the code structure. (FIRST IMPORTANT AND MUST).
-
-
-Then move to online multiplayer
-
-Balancing & Difficulty Levels
-
-Add AI difficulty modes (easy, medium, hard).
-
-Tune damage, movement speed, and spawn rates.
-
-Balance power-ups — make sure none dominate the gameplay.
+Notes from user (kept for reference)
+-----------------------------------
+- Player defaults to name "Marko"; allow user-editable names.
+- Leaderboard CORS error (see original stack trace) — backend needs CORS headers.
+- When setting local players to two we need both players to choose name and color.
+- Controls button not doing anything — needs wiring.
+- Arrow-keys move the page when canvas doesn't fill the window — implement fullscreen scaling or preventDefault when canvas focused.
+- Yellow rectangle sometimes appears on firing — remove debugging visuals.
+- When returning to main menu, consider confirming and/or restarting the game state; ensure previous snowballs are cleared.
+- Bots should not pass through obstacles and occasionally dodge.
+- Add items/power-ups: shields (with HP), speed boost, homing snowball, triple throw, temporary screen darken.
+- Add timer option to match settings.
+- Add FPS and latency displays.
+- Improve obstacle HP reset at new game start.
+- Investigate lag when multiple bots/players present.
 
 Visual Identity
 
