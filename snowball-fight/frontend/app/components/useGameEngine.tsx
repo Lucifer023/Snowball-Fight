@@ -33,6 +33,8 @@ export default function useGameEngine(opts: UseGameEngineOpts) {
   const myIdRef = useRef<string | null>(null);
   const leaderboardRef = useRef<Record<string, number> | null>(null);
   const continueBtnRef = useRef<HTMLButtonElement | null>(null);
+  // keysRef is used across effects/handlers so we can clear it when the game is paused
+  const keysRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!started) return;
@@ -102,12 +104,13 @@ export default function useGameEngine(opts: UseGameEngineOpts) {
       }
     })();
 
-    // input and rendering setup
-    const keys: Record<string, boolean> = {};
+  // input and rendering setup
+  // use keysRef.current for shared mutable key state
+  keysRef.current = keysRef.current || {};
     let mouse = { x: 0, y: 0 };
 
     function onKey(d: KeyboardEvent, down: boolean) {
-      keys[d.key.toLowerCase()] = down;
+      try { keysRef.current[d.key.toLowerCase()] = down; } catch (e) {}
       if (down && d.key === 'Escape') { setShowEscapeConfirm(true); d.preventDefault(); return; }
       if (down && d.key === ' ') {
         if (showEscapeConfirm) return;
@@ -144,10 +147,16 @@ export default function useGameEngine(opts: UseGameEngineOpts) {
       } catch (e) {}
     }
 
-    window.addEventListener('keydown', (e) => onKey(e, true));
-    window.addEventListener('keyup', (e) => onKey(e, false));
-    window.addEventListener('mousemove', onMouse);
-    window.addEventListener('mousedown', onMouseDown);
+  // named handlers so they can be removed in cleanup
+  const keydownHandler = (e: KeyboardEvent) => onKey(e, true);
+  const keyupHandler = (e: KeyboardEvent) => onKey(e, false);
+  const mousemoveHandler = (e: MouseEvent) => onMouse(e);
+  const mousedownHandler = (e: MouseEvent) => onMouseDown(e);
+
+  window.addEventListener('keydown', keydownHandler as any);
+  window.addEventListener('keyup', keyupHandler as any);
+  window.addEventListener('mousemove', mousemoveHandler as any);
+  window.addEventListener('mousedown', mousedownHandler as any);
 
     // graphics maps
     const playerDisplays = new Map<string, { container: PIXI.Container; body: PIXI.Graphics; hb: PIXI.Graphics; txt: PIXI.Text; nameTxt: PIXI.Text; }>();
@@ -171,6 +180,7 @@ export default function useGameEngine(opts: UseGameEngineOpts) {
     app.ticker.add(() => {
       const me = stateRef.current.players.find((p) => p.id === myIdRef.current);
       if (me) {
+        const keys = keysRef.current || {};
         const speed = 3; let nx = me.x; let ny = me.y;
         if (keys['arrowup'] || keys['w']) ny -= speed;
         if (keys['arrowdown'] || keys['s']) ny += speed;
@@ -248,12 +258,29 @@ export default function useGameEngine(opts: UseGameEngineOpts) {
       try { appRef.current = null; } catch (e) {}
       try { socketRef.current?.disconnect(); } catch (e) {}
       try { const sd = (scoreboardDivRef && (scoreboardDivRef as any).current) as HTMLDivElement | null; if (sd && containerRef.current) { try { containerRef.current.removeChild(sd); } catch (e) {} } try { if ((window as any).__snowball_scoreboard_ref) (window as any).__snowball_scoreboard_ref.current = null; } catch (e) {} } catch (e) {}
-      window.removeEventListener('mousemove', onMouse);
-      window.removeEventListener('mousedown', onMouseDown);
-      window.removeEventListener('keydown', (e) => onKey(e, true));
-      window.removeEventListener('keyup', (e) => onKey(e, false));
+      window.removeEventListener('mousemove', mousemoveHandler as any);
+      window.removeEventListener('mousedown', mousedownHandler as any);
+      window.removeEventListener('keydown', keydownHandler as any);
+      window.removeEventListener('keyup', keyupHandler as any);
     };
   }, [started]);
+
+  // Pause/resume the PIXI ticker when escape-confirm modal is shown or hidden
+  useEffect(() => {
+    const app = appRef.current as PIXI.Application | null;
+    if (!app || !(app as any).ticker) return;
+    try {
+      if (showEscapeConfirm) {
+        // stop the ticker and clear input state so movement doesn't continue
+        (app as any).ticker.stop();
+        keysRef.current = {};
+      } else {
+        (app as any).ticker.start();
+      }
+    } catch (e) {
+      // ignore ticker control errors
+    }
+  }, [showEscapeConfirm]);
 
   return { containerRef, continueBtnRef, appRef, socketRef };
 }
