@@ -17,8 +17,63 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 const players = new Map<string, Player>();
 const snowballs: Snowball[] = [];
 const obstacles: Obstacle[] = [];
-// initialize obstacles
-obstacles.push(...INITIAL_OBSTACLES.map((o) => ({ ...o })));
+
+// Preset templates: arrays of obstacle shape templates (w,h,hp)
+const OBSTACLE_PRESETS: Array<Array<{ w: number; h: number; hp: number }>> = [
+  // Preset 0: derive shapes from INITIAL_OBSTACLES
+  INITIAL_OBSTACLES.map((t) => ({ w: t.w, h: t.h, hp: t.hp })),
+  // Preset 1: compact spread
+  [ { w: 100, h: 36, hp: 100 }, { w: 180, h: 52, hp: 150 }, { w: 140, h: 64, hp: 120 } ],
+  // Preset 2: asymmetric
+  [ { w: 60, h: 28, hp: 80 }, { w: 220, h: 56, hp: 160 }, { w: 160, h: 60, hp: 130 } ],
+  // Preset 3: many small obstacles (split sizes)
+  [ { w: 80, h: 30, hp: 70 }, { w: 80, h: 30, hp: 70 }, { w: 160, h: 48, hp: 110 } ],
+];
+
+function choosePreset(): Array<{ w: number; h: number; hp: number }> {
+  const idx = Math.floor(Math.random() * OBSTACLE_PRESETS.length);
+  return OBSTACLE_PRESETS[idx];
+}
+
+// Helper: generate randomized obstacles using provided size/hp templates
+function generateObstacles(templates?: Array<{ w: number; h: number; hp: number }>): Obstacle[] {
+  const tplList = templates && templates.length ? templates : INITIAL_OBSTACLES.map((t) => ({ w: t.w, h: t.h, hp: t.hp }));
+  const out: Obstacle[] = [];
+  const margin = 40;
+  const maxAttempts = 200;
+
+  for (let i = 0; i < tplList.length; i++) {
+    const tpl = tplList[i];
+    let attempts = 0;
+    let placed = false;
+    while (!placed && attempts < maxAttempts) {
+      attempts++;
+      const w = tpl.w; const h = tpl.h;
+      const x = Math.floor(Math.random() * (MAP_WIDTH - margin * 2 - w)) + margin;
+      const y = Math.floor(Math.random() * (MAP_HEIGHT - margin * 2 - h)) + margin;
+      // ensure not overlapping existing obstacles
+      let overlap = false;
+      for (const o of out) {
+        const pad = 16;
+        if (x < o.x + o.w + pad && x + w + pad > o.x && y < o.y + o.h + pad && y + h + pad > o.y) { overlap = true; break; }
+      }
+      if (overlap) continue;
+      const obs: Obstacle = { id: `obs_${Date.now()}_${i}_${Math.floor(Math.random()*10000)}`, x, y, w, h, hp: tpl.hp };
+      out.push(obs);
+      placed = true;
+    }
+    // if not placed after attempts, fall back to center-ish position
+    if (!placed) {
+      const fallbackX = Math.max(margin, Math.min(MAP_WIDTH - tpl.w - margin, Math.floor(MAP_WIDTH/2 - tpl.w/2)));
+      const fallbackY = Math.max(margin, Math.min(MAP_HEIGHT - tpl.h - margin, Math.floor(MAP_HEIGHT/2 - tpl.h/2)));
+      out.push({ id: `obs_fallback_${i}_${Date.now()}`, x: fallbackX, y: fallbackY, w: tpl.w, h: tpl.h, hp: tpl.hp });
+    }
+  }
+  return out;
+}
+
+// initialize obstacles with randomized positions
+obstacles.push(...generateObstacles(choosePreset()));
 
 
 // Map / world size (adjust as needed to match client canvas coordinate space)
@@ -40,6 +95,10 @@ io.on('connection', (socket) => {
   players.set(id, player);
 
   // emit full initial state including obstacles and snowballs and leaderboard
+  // regenerate obstacles for each new connection so entering the game always gets a fresh layout
+  obstacles.length = 0;
+  obstacles.push(...generateObstacles(choosePreset()));
+
   socket.emit('init', {
     id,
     players: Array.from(players.values()),
@@ -156,7 +215,7 @@ io.on('connection', (socket) => {
     // reset obstacles and snowballs
     snowballs.length = 0;
     obstacles.length = 0;
-    obstacles.push(...INITIAL_OBSTACLES.map((o) => ({ ...o })));
+    obstacles.push(...generateObstacles());
     io.emit('state', {
       players: Array.from(players.values()),
       snowballs: [],
@@ -233,7 +292,7 @@ setInterval(() => {
             }
             snowballs.length = 0;
             obstacles.length = 0;
-            obstacles.push(...INITIAL_OBSTACLES.map((o) => ({ ...o })));
+            obstacles.push(...generateObstacles());
             // broadcast reset state
             io.emit('state', {
               players: Array.from(players.values()),
@@ -276,7 +335,7 @@ setInterval(() => {
             }
             snowballs.length = 0;
             obstacles.length = 0;
-            obstacles.push(...INITIAL_OBSTACLES.map((o) => ({ ...o })));
+            obstacles.push(...generateObstacles());
             io.emit('state', {
               players: Array.from(players.values()),
               snowballs: [],
