@@ -204,6 +204,7 @@ Notes from user (kept for reference)
 - Add FPS and latency displays.
 - Improve obstacle HP reset at new game start.
 - Investigate lag when multiple bots/players present.
+- Enter the game, destroy all obstacles, enter new game, there are zero obstacles. The expected behavior is to every new game have new obstacles on different locations.
 
 Visual Identity
 

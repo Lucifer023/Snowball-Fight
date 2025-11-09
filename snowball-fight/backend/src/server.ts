@@ -3,37 +3,10 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import fs from 'fs';
 import path from 'path';
+import { Vec2, Player, Snowball, Obstacle, MAP_WIDTH, MAP_HEIGHT, WIN_SCORE, INITIAL_OBSTACLES } from './models/types';
+import { tickBots, createBots } from './ai/bots';
+import { leaderboardRouter, incrementWinner, getLeaderboard } from './routes/leaderboard';
 
-type Vec2 = { x: number; y: number };
-
-interface Player {
-  id: string;
-  x: number;
-  y: number;
-  health: number;
-  score: number;
-  name?: string;
-  color?: string;
-  isBot?: boolean;
-}
-
-interface Snowball {
-  id: string;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  ownerId: string;
-}
-
-interface Obstacle {
-  id: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  hp: number;
-}
 
 const app = express();
 const httpServer = createServer(app);
@@ -44,47 +17,15 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 const players = new Map<string, Player>();
 const snowballs: Snowball[] = [];
 const obstacles: Obstacle[] = [];
-
-// initial obstacle template (used to reset)
-const INITIAL_OBSTACLES: Obstacle[] = [
-  { id: 'obs1', x: 300, y: 200, w: 120, h: 40, hp: 100 },
-  { id: 'obs2', x: 700, y: 420, w: 200, h: 60, hp: 150 },
-  { id: 'obs3', x: 1200, y: 300, w: 160, h: 80, hp: 120 },
-];
+// initialize obstacles
 obstacles.push(...INITIAL_OBSTACLES.map((o) => ({ ...o })));
 
-// leaderboard persistence
-const DATA_DIR = path.join(__dirname, '..', '..', 'data');
-const LEADERBOARD_FILE = path.join(DATA_DIR, 'leaderboard.json');
-let leaderboard: Record<string, number> = {};
-try {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (fs.existsSync(LEADERBOARD_FILE)) {
-    const raw = fs.readFileSync(LEADERBOARD_FILE, 'utf8');
-    leaderboard = JSON.parse(raw || '{}');
-  }
-} catch (e) {
-  console.error('failed to load leaderboard', e);
-  leaderboard = {};
-}
-
-function saveLeaderboard() {
-  try {
-    fs.writeFileSync(LEADERBOARD_FILE, JSON.stringify(leaderboard, null, 2), 'utf8');
-  } catch (e) {
-    console.error('failed to save leaderboard', e);
-  }
-}
 
 // Map / world size (adjust as needed to match client canvas coordinate space)
-const MAP_WIDTH = 1600;
-const MAP_HEIGHT = 900;
-const WIN_SCORE = 5; // points required to win a round
+// MAP_WIDTH, MAP_HEIGHT, WIN_SCORE come from types.ts
 
-// expose a simple leaderboard endpoint so clients can fetch without joining
-app.get('/leaderboard', (req, res) => {
-  res.json(leaderboard);
-});
+// leaderboard routes
+app.use('/leaderboard', leaderboardRouter);
 
 function randomPos(): Vec2 {
   // spawn anywhere inside the map bounds with a margin
@@ -104,7 +45,7 @@ io.on('connection', (socket) => {
     players: Array.from(players.values()),
     snowballs: snowballs.map((s) => ({ id: s.id, x: s.x, y: s.y })),
     obstacles: obstacles.map((o) => ({ id: o.id, x: o.x, y: o.y, w: o.w, h: o.h, hp: o.hp })),
-    leaderboard,
+    leaderboard: getLeaderboard(),
   });
   io.emit('playerJoined', player);
 
@@ -132,28 +73,20 @@ io.on('connection', (socket) => {
 
   // allow clients to request bot spawns (simple server-side bots/AI)
   socket.on('addBots', (data: { count: number }) => {
-    // Treat the requested count as an absolute target. Create or remove bots
-    // so that the total number of bots on the server matches the requested value.
-  const target = Math.max(0, Math.min(6, data.count || 0));
-  const existingBots = Array.from(players.values()).filter((p) => p.isBot);
-  console.log(`addBots requested: target=${target}, existing=${existingBots.length}`);
+    // treat requested count as an absolute target; create or remove bots
+    const target = Math.max(0, Math.min(6, data.count || 0));
+    const existingBots = Array.from(players.values()).filter((p) => p.isBot);
     const existingCount = existingBots.length;
+    console.log(`addBots requested: target=${target}, existing=${existingCount}`);
     if (existingCount < target) {
-      const toCreate = target - existingCount;
-      const newBots: Player[] = [];
-      for (let i = 0; i < toCreate; i++) {
-        const botId = `bot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-        const pos = randomPos();
-        const bot: Player = { id: botId, x: pos.x, y: pos.y, health: 100, score: 0, name: `Bot${existingCount + i + 1}`, color: '#888', isBot: true };
-        players.set(botId, bot);
-        newBots.push(bot);
+      const newBots = createBots(existingBots, target, randomPos);
+      for (const b of newBots) {
+        players.set(b.id, b);
+        io.emit('playerJoined', b);
       }
-      // emit each bot join individually for client compatibility
-      for (const b of newBots) io.emit('playerJoined', b);
       console.log(`created ${newBots.length} bot(s), now total bots=${Array.from(players.values()).filter(p=>p.isBot).length}`);
     } else if (existingCount > target) {
       const toRemove = existingCount - target;
-      // remove the oldest bots first (stable behavior)
       const botsToRemove = existingBots.slice(0, toRemove);
       for (const b of botsToRemove) {
         players.delete(b.id);
@@ -179,7 +112,7 @@ io.on('connection', (socket) => {
       if (color) p.color = color;
       io.emit('playerUpdated', p);
       // send current persistent leaderboard
-      io.emit('leaderboard', leaderboard);
+      io.emit('leaderboard', getLeaderboard());
     }
   });
 
@@ -235,51 +168,13 @@ io.on('connection', (socket) => {
 // Simple game loop
 const TICK = 1000 / 30;
 setInterval(() => {
-  // simple bot AI: move toward nearest human and occasionally throw
-  const bots = Array.from(players.values()).filter((p) => p.isBot);
-  const humans = Array.from(players.values()).filter((p) => !p.isBot);
-  for (const bot of bots) {
-    if (humans.length === 0) break;
-    // find nearest human
-    let target = humans[0];
-    let best = Number.POSITIVE_INFINITY;
-    for (const h of humans) {
-      const dx = h.x - bot.x;
-      const dy = h.y - bot.y;
-      const d2 = dx * dx + dy * dy;
-      if (d2 < best) {
-        best = d2;
-        target = h;
-      }
-    }
-    // move toward target
-    const bSpeed = 1.8; // slower than player
-    try {
-      const dx = target.x - bot.x;
-      const dy = target.y - bot.y;
-      const len = Math.sqrt(dx * dx + dy * dy) || 1;
-      bot.x += (dx / len) * bSpeed;
-      bot.y += (dy / len) * bSpeed;
-      // occasionally throw when within a reasonable range
-      if (Math.random() < 0.02) {
-        const speed = 6;
-        const vx = (dx / len) * speed;
-        const vy = (dy / len) * speed;
-        const sb: Snowball = {
-          id: `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-          x: bot.x,
-          y: bot.y,
-          vx,
-          vy,
-          ownerId: bot.id,
-        };
-        snowballs.push(sb);
-        io.emit('snowballCreated', { id: sb.id, x: sb.x, y: sb.y });
-      }
-    } catch (e) {
-      // swallow AI errors
-    }
-  }
+  // bot AI: delegate to bots.tickBots
+  const botsArr = Array.from(players.values()).filter((p) => p.isBot) as Player[];
+  const humans = Array.from(players.values()).filter((p) => !p.isBot) as Player[];
+  tickBots(botsArr, humans, snowballs, (sb: Snowball) => {
+    snowballs.push(sb);
+    io.emit('snowballCreated', { id: sb.id, x: sb.x, y: sb.y });
+  });
   // update snowballs
   for (let i = snowballs.length - 1; i >= 0; i--) {
     const sb = snowballs[i];
@@ -325,9 +220,8 @@ setInterval(() => {
             const winnerName = owner.name || 'Player';
             console.log('round winner:', winnerName);
             // increment persistent leaderboard by wins
-            leaderboard[winnerName] = (leaderboard[winnerName] || 0) + 1;
-            saveLeaderboard();
-            io.emit('leaderboard', leaderboard);
+            incrementWinner(winnerName);
+            io.emit('leaderboard', getLeaderboard());
             io.emit('roundWinner', { id: owner.id, name: winnerName });
             // reset scores and respawn players, reset obstacles and clear snowballs
             for (const [pid, pp] of players) {
@@ -368,9 +262,8 @@ setInterval(() => {
             }
             console.log('elimination round winner:', winnerName);
             if (winnerName !== 'Bots') {
-              leaderboard[winnerName] = (leaderboard[winnerName] || 0) + 1;
-              saveLeaderboard();
-              io.emit('leaderboard', leaderboard);
+              incrementWinner(winnerName);
+              io.emit('leaderboard', getLeaderboard());
             }
             io.emit('roundWinner', { id: owner?.id || '', name: winnerName });
             // reset state
