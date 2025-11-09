@@ -219,3 +219,13 @@ Leaderboard option is not that visible.
 I now do not have that button on the main menu for seeing the controls.
 
 Main menu is on top of the payer info. Fix it.
+
+Functionality for local players is not working.
+
+Add fps and ms.
+
+Make that user can pick the color that he wants from like pallet of colors.
+
+Health bar of the obstacles to be full with every new game.
+
+Why for some reason, there is one player and bot and we are throwing snowballs and I see the lags.

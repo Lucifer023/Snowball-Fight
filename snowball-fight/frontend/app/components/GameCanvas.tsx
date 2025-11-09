@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from 'react';
-import { Box, Input, Button, HStack, VStack, Portal, Select } from '@chakra-ui/react';
+import { Box, Input, Button, HStack, VStack, Portal, Select, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, ModalCloseButton } from '@chakra-ui/react';
 import * as PIXI from 'pixi.js';
 
 type Player = { id: string; x: number; y: number; health: number; score: number; name?: string; color?: string };
@@ -30,6 +30,8 @@ export default function GameCanvas() {
   const [homeLeaderboard, setHomeLeaderboard] = useState<Record<string, number> | null>(null);
   const [showHomeLeaderboard, setShowHomeLeaderboard] = useState(false);
   const [roundWinner, setRoundWinner] = useState<string | null>(null);
+  const [showEscapeConfirm, setShowEscapeConfirm] = useState(false);
+  const continueBtnRef = useRef<HTMLButtonElement | null>(null);
 
   // mark mounted on first client render to avoid SSR/client hydration mismatches
   useEffect(() => {
@@ -133,15 +135,15 @@ export default function GameCanvas() {
             stateRef.current.snowballs = [...stateRef.current.snowballs, sb];
           }
         });
-        // if user requested bots, ask the server to spawn them shortly after connect.
-        // Use a ref so we only request a given target once (avoid cumulative spawns on reconnect/hot-reload).
-        if ((botCount || 0) > 0) {
-          if (botsRequestedRef.current !== botCount) {
-            botsRequestedRef.current = botCount;
-            setTimeout(() => {
-              try { socket.emit('addBots', { count: botCount }); } catch (e) {}
-            }, 300);
-          }
+        // Inform server of the desired bot target (treat as absolute). Send this
+        // even when botCount is 0 so the server can remove existing bots.
+        // Use a ref so we only request a given target once (avoid duplicate
+        // requests on reconnect/hot-reload).
+        if (botsRequestedRef.current !== botCount) {
+          botsRequestedRef.current = botCount;
+          setTimeout(() => {
+            try { socket.emit('addBots', { count: botCount }); } catch (e) {}
+          }, 300);
         }
       } catch (err) {
         console.error('failed to load socket.io-client in the browser', err);
@@ -166,7 +168,13 @@ export default function GameCanvas() {
 
     function onKey(d: KeyboardEvent, down: boolean) {
       keys[d.key.toLowerCase()] = down;
+      if (down && d.key === 'Escape') {
+        setShowEscapeConfirm(true);
+        d.preventDefault();
+        return;
+      }
       if (down && d.key === ' ') {
+        if (showEscapeConfirm) return; // ignore throw while modal is open
         // throw — use mapped mouse coordinates (canvas space)
     const me = stateRef.current.players.find((p) => p.id === myIdRef.current);
         if (!me) return;
@@ -212,7 +220,22 @@ export default function GameCanvas() {
 
     function onMouseDown(e: MouseEvent) {
       if (e.button !== 0) return; // left click only
+      // don't allow clicks that originate outside the canvas (for example the
+      // Start button) to trigger a throw. Also ignore input while the escape
+      // confirmation modal is open.
       try {
+        if (showEscapeConfirm) return;
+        const view = app.view as HTMLCanvasElement | undefined;
+        // allow clicks only when they originate on the canvas element or within
+        // the container (fallback). This prevents the Start button click from
+        // being interpreted as a game click when the game mounts.
+        const target = e.target as Node | null;
+        if (view && target !== view) {
+          // if the click target isn't the canvas, also allow canvas children
+          // (rare) by checking containment inside the containerRef
+          if (!containerRef.current || !containerRef.current.contains(target)) return;
+        }
+
         const me = stateRef.current.players.find((p) => p.id === myIdRef.current);
         if (!me) return;
         const px = mouse.x;
@@ -491,6 +514,8 @@ export default function GameCanvas() {
 
     return () => {
       try { app.destroy(true, { children: true }); } catch (e) {}
+      // clear stored ref to the destroyed app so other effects don't try to use it
+      try { appRef.current = null; } catch (e) {}
       try { socketRef.current?.disconnect(); } catch (e) {}
       try {
         const sd = (scoreboardDivRef && (scoreboardDivRef as any).current) as HTMLDivElement | null;
@@ -508,17 +533,35 @@ export default function GameCanvas() {
     };
   }, [started]);
 
+  // Pause/resume game ticker when escape confirm modal is shown
+  useEffect(() => {
+    // guard against destroyed app or missing ticker; calling start/stop on a null
+    // ticker was causing the runtime error when leaving the game.
+    const app = appRef.current as PIXI.Application | null;
+    if (app && (app as any).ticker) {
+      try {
+        if (showEscapeConfirm) {
+          (app as any).ticker.stop();
+        } else {
+          (app as any).ticker.start();
+        }
+      } catch (e) {
+        // ignore any errors from ticker control
+      }
+    }
+  }, [showEscapeConfirm]);
+
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
       {!started ? (
         <div style={{ width: 480, padding: 20, background: '#111', color: '#fff', borderRadius: 8 }}>
           <h2>Snowball Fight</h2>
           <div style={{ marginBottom: 8 }}>
-            <label style={{ display: 'block', marginBottom: 4 }}>Name</label>
-            <input value={playerName} onChange={(e) => setPlayerName(e.target.value)} style={{ width: '100%', padding: 8, background: '#fff', color: '#111', borderRadius: 4, border: '1px solid rgba(0,0,0,0.12)' }} />
+            <label htmlFor="playerName" style={{ display: 'block', marginBottom: 4 }}>Name</label>
+            <input id="playerName" name="playerName" value={playerName} onChange={(e) => setPlayerName(e.target.value)} style={{ width: '100%', padding: 8, background: '#fff', color: '#111', borderRadius: 4, border: '1px solid rgba(0,0,0,0.12)' }} />
           </div>
           <div style={{ marginBottom: 8 }}>
-            <label style={{ display: 'block', marginBottom: 4 }}>Color</label>
+            <div style={{ display: 'block', marginBottom: 4 }}>Color</div>
             <div style={{ display: 'flex', gap: 8 }}>
               {['#2f9cff', '#ff6b6b', '#ffd166', '#8aff8a', '#d99bff'].map((c) => (
                 <div
@@ -531,15 +574,15 @@ export default function GameCanvas() {
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <label style={{ color: '#ddd' }}>Local players</label>
-              <select value={localPlayers} onChange={(e) => setLocalPlayers(Number(e.target.value))} style={{ padding: 6, width: 80, background: '#fff', color: '#111', borderRadius: 4, border: '1px solid rgba(0,0,0,0.12)' }}>
+              <label htmlFor="localPlayers" style={{ color: '#ddd' }}>Local players</label>
+                <select id="localPlayers" name="localPlayers" value={localPlayers} onChange={(e) => setLocalPlayers(Number(e.target.value))} style={{ padding: 6, width: 80, background: '#fff', color: '#111', borderRadius: 4, border: '1px solid rgba(0,0,0,0.12)' }}>
                 <option value={1}>1</option>
                 <option value={2}>2</option>
               </select>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <label style={{ color: '#ddd' }}>Bots</label>
-              <select value={botCount} onChange={(e) => setBotCount(Number(e.target.value))} style={{ padding: 6, width: 80, background: '#fff', color: '#111', borderRadius: 4, border: '1px solid rgba(0,0,0,0.12)' }}>
+              <label htmlFor="botCount" style={{ color: '#ddd' }}>Bots</label>
+              <select id="botCount" name="botCount" value={botCount} onChange={(e) => setBotCount(Number(e.target.value))} style={{ padding: 6, width: 80, background: '#fff', color: '#111', borderRadius: 4, border: '1px solid rgba(0,0,0,0.12)' }}>
                 <option value={0}>0</option>
                 <option value={1}>1</option>
                 <option value={2}>2</option>
@@ -609,6 +652,23 @@ export default function GameCanvas() {
           </div>
         </div>
       )}
+
+  <Modal isOpen={showEscapeConfirm} onClose={() => setShowEscapeConfirm(false)} isCentered>
+        <ModalOverlay />
+        <ModalContent bg="#111" color="#fff">
+          <ModalHeader>Return to Main Menu?</ModalHeader>
+          <ModalCloseButton _focus={{ boxShadow: 'none', outline: 'none' }} _focusVisible={{ boxShadow: 'none' }} />
+          <ModalBody>
+            Are you sure you want to leave the game and return to the main menu?
+          </ModalBody>
+          <ModalFooter>
+            <Button colorScheme="red" mr={3} onClick={() => { setStarted(false); setShowEscapeConfirm(false); }}>
+              Yes, Go to Menu
+            </Button>
+            <Button ref={continueBtnRef} variant="outline" colorScheme="whiteAlpha" onClick={() => setShowEscapeConfirm(false)}>No, Continue Playing</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </div>
   );
 }

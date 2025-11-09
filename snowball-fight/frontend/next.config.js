@@ -20,6 +20,12 @@ module.exports = {
       'supports-color': emptyModule,
       // prefer the browser debug entry when some packages accidentally import the node debug file
       'debug/src/node.js': path.resolve(__dirname, './node_modules/debug/src/browser.js'),
+      // Force emotion packages to resolve to the single copy in this project's node_modules.
+      // This avoids warnings and runtime issues when multiple builds or versions are
+      // accidentally included by transitive deps or HMR.
+      '@emotion/react': path.resolve(__dirname, 'node_modules', '@emotion', 'react'),
+      '@emotion/styled': path.resolve(__dirname, 'node_modules', '@emotion', 'styled'),
+      '@emotion/cache': path.resolve(__dirname, 'node_modules', '@emotion', 'cache'),
     });
 
     return config;
