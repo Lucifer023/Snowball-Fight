@@ -16,6 +16,7 @@ export default function GameCanvas() {
   const [showHomeLeaderboard, setShowHomeLeaderboard] = useState(false);
   const [roundWinner, setRoundWinner] = useState<string | null>(null);
   const [showEscapeConfirm, setShowEscapeConfirm] = useState(false);
+  const [showLegend, setShowLegend] = useState(false);
   const continueBtnRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
@@ -25,6 +26,7 @@ export default function GameCanvas() {
     playerName,
     playerColor,
     botCount,
+    localPlayers,
     showEscapeConfirm,
     setShowEscapeConfirm,
     setRoundWinner,
@@ -66,6 +68,24 @@ export default function GameCanvas() {
       ) : (
         <div style={{ position: 'relative' }}>
           <div ref={containerRef} />
+          {/* Controls legend toggle */}
+          <div style={{ position: 'fixed', right: 20, top: 20, zIndex: 9999 }}>
+            <button id="controlsToggle" onClick={() => setShowLegend((s: boolean) => !s)} style={{ padding: '6px 10px', background: '#333', color: '#fff', borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)' }}>Controls</button>
+          </div>
+        </div>
+      )}
+
+      {/* Legend overlay */}
+      {showLegend && (
+        <div style={{ position: 'fixed', right: 16, top: 56, width: 320, background: 'rgba(0,0,0,0.85)', color: '#fff', padding: 12, borderRadius: 8, zIndex: 4000 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <strong>Controls</strong>
+            <button onClick={() => setShowLegend(false)} style={{ background: 'transparent', color: '#fff', border: 'none' }}>Close</button>
+          </div>
+          <div style={{ fontSize: 13, lineHeight: '1.4' }}>
+            <div style={{ marginBottom: 8 }}><strong>Player 1</strong>: Move with WASD — Throw: Space or Left Click</div>
+            <div><strong>Player 2</strong>: Move with Arrow Keys — Throw: Enter</div>
+          </div>
         </div>
       )}
 

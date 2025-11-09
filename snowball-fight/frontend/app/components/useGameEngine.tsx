@@ -16,6 +16,7 @@ type UseGameEngineOpts = {
   playerName: string;
   playerColor: string;
   botCount: number;
+  localPlayers?: number;
   showEscapeConfirm: boolean;
   setShowEscapeConfirm: (b: boolean) => void;
   setRoundWinner: (s: string | null) => void;
@@ -24,13 +25,17 @@ type UseGameEngineOpts = {
 };
 
 export default function useGameEngine(opts: UseGameEngineOpts) {
-  const { started, playerName, playerColor, botCount, showEscapeConfirm, setShowEscapeConfirm, setRoundWinner, setHomeLeaderboard, setShowHomeLeaderboard } = opts;
+  // destructure options (includes localPlayers)
+  const { started, playerName, playerColor, botCount, localPlayers = 1, showEscapeConfirm, setShowEscapeConfirm, setRoundWinner, setHomeLeaderboard, setShowHomeLeaderboard } = opts;
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const socketRef = useRef<any>(null);
+  const socketRef = useRef<any>(null); // primary socket (for backwards compat)
+  const socketRefsRef = useRef<any[]>([]); // all sockets for local players
   const botsRequestedRef = useRef<number | null>(null);
   const appRef = useRef<PIXI.Application | null>(null);
   const stateRef = useRef<{ players: Player[]; snowballs: Snowball[]; obstacles?: Obstacle[] }>({ players: [], snowballs: [], obstacles: [] });
-  const myIdRef = useRef<string | null>(null);
+  const myIdRef = useRef<string | null>(null); // primary id
+  const myIdsRef = useRef<string[]>([]); // ids for all local sockets
+  const aimRef = useRef<Array<{ x: number; y: number }>>([]); // aim vector per local player
   const leaderboardRef = useRef<Record<string, number> | null>(null);
   const continueBtnRef = useRef<HTMLButtonElement | null>(null);
   // keysRef is used across effects/handlers so we can clear it when the game is paused
@@ -69,35 +74,54 @@ export default function useGameEngine(opts: UseGameEngineOpts) {
           sockMod = await import('socket.io-client');
         }
         const ioCtor = sockMod?.io || sockMod?.default || sockMod;
-        const socket = typeof ioCtor === 'function' ? ioCtor(BACKEND) : (sockMod as any).connect ? (sockMod as any).connect(BACKEND) : null;
-        socketRef.current = socket;
 
-        let myId: string | null = null;
+        // create one socket per local player (1 or 2). primary socketRefsRef.current[0]
+        socketRefsRef.current = [];
+        myIdsRef.current = [];
 
-        socket.on('init', (data: { id: string; players: Player[]; snowballs?: Snowball[]; obstacles?: Obstacle[]; leaderboard?: Record<string, number> }) => {
-          myId = data.id;
-          myIdRef.current = myId;
-          stateRef.current.players = data.players || [];
-          stateRef.current.snowballs = data.snowballs || [];
-          stateRef.current.obstacles = data.obstacles || [];
-          if (data.leaderboard) leaderboardRef.current = data.leaderboard;
-          try { socket.emit('setName', { name: playerName, color: playerColor }); localStorage.setItem('snowball_name', playerName); localStorage.setItem('snowball_color', playerColor); } catch (e) {}
-        });
+        for (let i = 0; i < Math.max(1, localPlayers); i++) {
+          const socket = typeof ioCtor === 'function' ? ioCtor(BACKEND) : (sockMod as any).connect ? (sockMod as any).connect(BACKEND) : null;
+          socketRefsRef.current.push(socket);
 
-        socket.on('playerJoined', (p: Player) => { stateRef.current.players = [...stateRef.current.players.filter((x) => x.id !== p.id), p]; });
-        socket.on('playerLeft', ({ id }: { id: string }) => { stateRef.current.players = stateRef.current.players.filter((p) => p.id !== id); });
-        socket.on('playerUpdated', (p: Player) => { stateRef.current.players = [...stateRef.current.players.filter((x) => x.id !== p.id), p]; });
-        socket.on('leaderboard', (lb: Record<string, number>) => { leaderboardRef.current = lb; });
-        socket.on('roundWinner', (data: { id: string; name: string }) => { setRoundWinner(data.name); });
-        socket.on('state', (st: { players: Player[]; snowballs: Snowball[]; obstacles?: Obstacle[] }) => { stateRef.current.players = st.players; stateRef.current.snowballs = st.snowballs; stateRef.current.obstacles = st.obstacles || []; });
-        socket.on('snowballCreated', (sb: { id: string; x: number; y: number }) => {
-          const exists = stateRef.current.snowballs.find((s) => s.id === sb.id);
-          if (!exists) stateRef.current.snowballs = [...stateRef.current.snowballs, sb];
-        });
+          // per-socket init handler
+          socket.on('init', (data: { id: string; players: Player[]; snowballs?: Snowball[]; obstacles?: Obstacle[]; leaderboard?: Record<string, number> }) => {
+            myIdsRef.current[i] = data.id;
+            // update global state
+            stateRef.current.players = data.players || [];
+            stateRef.current.snowballs = data.snowballs || [];
+            stateRef.current.obstacles = data.obstacles || [];
+            if (data.leaderboard) leaderboardRef.current = data.leaderboard;
 
-        if (botsRequestedRef.current !== botCount) {
+            try {
+              const name = i === 0 ? playerName : `${playerName} 2`;
+              let color = playerColor;
+              if (i === 1) {
+                color = playerColor === '#2f9cff' ? '#ff6b6b' : '#2f9cff';
+              }
+              socket.emit('setName', { name, color });
+              if (i === 0) { localStorage.setItem('snowball_name', playerName); localStorage.setItem('snowball_color', playerColor); }
+            } catch (e) {}
+          });
+
+          socket.on('playerJoined', (p: Player) => { stateRef.current.players = [...stateRef.current.players.filter((x) => x.id !== p.id), p]; });
+          socket.on('playerLeft', ({ id }: { id: string }) => { stateRef.current.players = stateRef.current.players.filter((p) => p.id !== id); });
+          socket.on('playerUpdated', (p: Player) => { stateRef.current.players = [...stateRef.current.players.filter((x) => x.id !== p.id), p]; });
+          socket.on('leaderboard', (lb: Record<string, number>) => { leaderboardRef.current = lb; });
+          socket.on('roundWinner', (data: { id: string; name: string }) => { setRoundWinner(data.name); });
+          socket.on('state', (st: { players: Player[]; snowballs: Snowball[]; obstacles?: Obstacle[] }) => { stateRef.current.players = st.players; stateRef.current.snowballs = st.snowballs; stateRef.current.obstacles = st.obstacles || []; });
+          socket.on('snowballCreated', (sb: { id: string; x: number; y: number }) => {
+            const exists = stateRef.current.snowballs.find((s) => s.id === sb.id);
+            if (!exists) stateRef.current.snowballs = [...stateRef.current.snowballs, sb];
+          });
+        }
+
+        // keep primary references for backwards compat
+        socketRef.current = socketRefsRef.current[0];
+        myIdRef.current = myIdsRef.current[0] || null;
+
+        if (botsRequestedRef.current !== botCount && socketRefsRef.current[0]) {
           botsRequestedRef.current = botCount;
-          setTimeout(() => { try { socket.emit('addBots', { count: botCount }); } catch (e) {} }, 300);
+          setTimeout(() => { try { socketRefsRef.current[0].emit('addBots', { count: botCount }); } catch (e) {} }, 300);
         }
       } catch (err) {
         console.error('failed to load socket.io-client in the browser', err);
@@ -112,14 +136,61 @@ export default function useGameEngine(opts: UseGameEngineOpts) {
     function onKey(d: KeyboardEvent, down: boolean) {
       try { keysRef.current[d.key.toLowerCase()] = down; } catch (e) {}
       if (down && d.key === 'Escape') { setShowEscapeConfirm(true); d.preventDefault(); return; }
+
+      // Keep aimRefs array in sync with localPlayers count
+      aimRef.current = aimRef.current || [];
+      while (aimRef.current.length < Math.max(1, localPlayers)) aimRef.current.push({ x: 1, y: 0 });
+
+      // When player moves, update that player's last-aim vector so throws use last movement/aim direction
+      // Player 1 movement keys
+      const key = d.key.toLowerCase();
+      if (['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(key)) {
+        // compute a simple movement vector from current keys
+        const k = keysRef.current;
+        const v1x = (k['d'] ? 1 : 0) + (k['arrowright'] ? 1 : 0) - (k['a'] ? 1 : 0) - (k['arrowleft'] ? 1 : 0);
+        const v1y = (k['s'] ? 1 : 0) + (k['arrowdown'] ? 1 : 0) - (k['w'] ? 1 : 0) - (k['arrowup'] ? 1 : 0);
+        if (v1x !== 0 || v1y !== 0) {
+          // assign aim for both players depending on which keys are used
+          // if WASD used, update player 0 aim; if arrows used, update player1 aim
+          if (k['w'] || k['a'] || k['s'] || k['d']) {
+            const len = Math.sqrt(v1x * v1x + v1y * v1y) || 1;
+            aimRef.current[0] = { x: v1x / len, y: v1y / len };
+          }
+          if (k['arrowup'] || k['arrowleft'] || k['arrowdown'] || k['arrowright']) {
+            const ax = (k['arrowright'] ? 1 : 0) - (k['arrowleft'] ? 1 : 0);
+            const ay = (k['arrowdown'] ? 1 : 0) - (k['arrowup'] ? 1 : 0);
+            const len2 = Math.sqrt(ax * ax + ay * ay) || 1;
+            aimRef.current[1] = { x: ax / len2, y: ay / len2 };
+          }
+        }
+      }
+
+      // Player 1: Space key throws in current aim direction (prefer mouse-derived aim if set)
       if (down && d.key === ' ') {
         if (showEscapeConfirm) return;
-        const me = stateRef.current.players.find((p) => p.id === myIdRef.current);
+        const idx0 = 0;
+        const myId0 = myIdsRef.current[idx0] || myIdRef.current;
+        const me = stateRef.current.players.find((p) => p.id === myId0);
         if (!me) return;
-        const px = mouse.x; const py = mouse.y; const dx = px - me.x; const dy = py - me.y;
-        try { debugGraphics.clear(); debugGraphics.lineStyle(2, 0x00ff00); debugGraphics.moveTo(me.x, me.y); debugGraphics.lineTo(px, py); } catch (e) {}
-        setTimeout(() => { debugGraphics.clear(); }, 600);
-        socketRef.current?.emit('throwSnowball', { dx, dy });
+        // prefer explicit mouse-based aim (set by onMouse), otherwise use aimRef
+        const aim = aimRef.current[idx0] || { x: 1, y: 0 };
+        const dx = aim.x; const dy = aim.y;
+        socketRefsRef.current[0]?.emit('throwSnowball', { dx, dy });
+        return;
+      }
+
+      // Player 2: Enter to throw using aimRef[1]
+      if (down && d.key === 'Enter') {
+        if (showEscapeConfirm) return;
+        const idx1 = 1;
+        const myId1 = myIdsRef.current[idx1];
+        if (!myId1) return;
+        const me = stateRef.current.players.find((p) => p.id === myId1);
+        if (!me) return;
+        const aim = aimRef.current[idx1] || { x: 1, y: 0 };
+        const dx = aim.x; const dy = aim.y;
+        socketRefsRef.current[1]?.emit('throwSnowball', { dx, dy });
+        return;
       }
     }
 
@@ -130,6 +201,16 @@ export default function useGameEngine(opts: UseGameEngineOpts) {
         const cssX = e.clientX - rect.left; const cssY = e.clientY - rect.top;
         const scaleX = app.renderer.width / rect.width || 1; const scaleY = app.renderer.height / rect.height || 1;
         mouse.x = cssX * scaleX; mouse.y = cssY * scaleY;
+        // update player 1 aim based on mouse position relative to player 1's position
+        const myId0 = myIdsRef.current[0] || myIdRef.current;
+        if (myId0) {
+          const me = stateRef.current.players.find((p) => p.id === myId0);
+          if (me) {
+            const dx = mouse.x - me.x; const dy = mouse.y - me.y;
+            const len = Math.sqrt(dx * dx + dy * dy) || 1;
+            aimRef.current[0] = { x: dx / len, y: dy / len };
+          }
+        }
       } else { mouse.x = e.clientX; mouse.y = e.clientY; }
     }
 
@@ -140,10 +221,12 @@ export default function useGameEngine(opts: UseGameEngineOpts) {
         const view = app.view as HTMLCanvasElement | undefined;
         const target = e.target as Node | null;
         if (view && target !== view) { if (!containerRef.current || !containerRef.current.contains(target)) return; }
-        const me = stateRef.current.players.find((p) => p.id === myIdRef.current);
+        // primary mouse actions go to player 1 (socket 0)
+        const myId0 = myIdsRef.current[0] || myIdRef.current;
+        const me = stateRef.current.players.find((p) => p.id === myId0);
         if (!me) return;
         const px = mouse.x; const py = mouse.y; const dx = px - me.x; const dy = py - me.y;
-        socketRef.current?.emit('throwSnowball', { dx, dy });
+        socketRefsRef.current[0]?.emit('throwSnowball', { dx, dy });
       } catch (e) {}
     }
 
@@ -166,27 +249,44 @@ export default function useGameEngine(opts: UseGameEngineOpts) {
     const scoreStyle = new PIXI.TextStyle({ fill: '#ffffff', fontSize: 12 });
     const nameStyle = new PIXI.TextStyle({ fill: '#ffffff', fontSize: 14, fontWeight: 'bold' });
 
-    const debugGraphics = new PIXI.Graphics(); app.stage.addChild(debugGraphics);
-    const minimapGraphics = new PIXI.Graphics(); const miniScale = Math.min(200 / MAP_WIDTH, 200 / MAP_HEIGHT); minimapGraphics.x = MAP_WIDTH - Math.round(MAP_WIDTH * miniScale) - 10; minimapGraphics.y = 10; app.stage.addChild(minimapGraphics);
+  // debug graphics removed (no aim indicator lines)
+  const minimapGraphics = new PIXI.Graphics(); const miniScale = Math.min(200 / MAP_WIDTH, 200 / MAP_HEIGHT); minimapGraphics.x = MAP_WIDTH - Math.round(MAP_WIDTH * miniScale) - 10; minimapGraphics.y = 10; app.stage.addChild(minimapGraphics);
 
-    const scoreboardDivRef = (window as any).__snowball_scoreboard_ref || { current: null };
-    if (!(window as any).__snowball_scoreboard_ref) (window as any).__snowball_scoreboard_ref = scoreboardDivRef;
-    if (!scoreboardDivRef.current && containerRef.current) {
-      const sd = document.createElement('div'); sd.style.position = 'absolute'; sd.style.left = '10px'; sd.style.top = '10px'; sd.style.color = 'white'; sd.style.fontFamily = 'Arial, Helvetica, sans-serif'; sd.style.zIndex = '1000'; containerRef.current.appendChild(sd); scoreboardDivRef.current = sd;
-    }
+    // Note: scoreboard and HUD are managed by React in GameCanvas. Avoid touching DOM here to prevent
+    // 'The deferred DOM Node could not be resolved to a valid node.' warnings. Use leaderboardRef/stateRef
+    // for game data only.
 
     const selectedHighlight = new PIXI.Graphics(); app.stage.addChild(selectedHighlight);
 
     app.ticker.add(() => {
-      const me = stateRef.current.players.find((p) => p.id === myIdRef.current);
-      if (me) {
-        const keys = keysRef.current || {};
-        const speed = 3; let nx = me.x; let ny = me.y;
-        if (keys['arrowup'] || keys['w']) ny -= speed;
-        if (keys['arrowdown'] || keys['s']) ny += speed;
-        if (keys['arrowleft'] || keys['a']) nx -= speed;
-        if (keys['arrowright'] || keys['d']) nx += speed;
-        if (nx !== me.x || ny !== me.y) socketRef.current?.emit('move', { x: nx, y: ny });
+      const keys = keysRef.current || {};
+      const speed = 3;
+      // Player 1 (local socket 0) uses WASD
+      const myId0 = myIdsRef.current[0] || myIdRef.current;
+      if (myId0) {
+        const me0 = stateRef.current.players.find((p) => p.id === myId0);
+        if (me0) {
+          let nx = me0.x; let ny = me0.y;
+          if (keys['w']) ny -= speed;
+          if (keys['s']) ny += speed;
+          if (keys['a']) nx -= speed;
+          if (keys['d']) nx += speed;
+          if (nx !== me0.x || ny !== me0.y) socketRefsRef.current[0]?.emit('move', { x: nx, y: ny });
+        }
+      }
+
+      // Player 2 (local socket 1) uses Arrow keys
+      const myId1 = myIdsRef.current[1];
+      if (myId1) {
+        const me1 = stateRef.current.players.find((p) => p.id === myId1);
+        if (me1) {
+          let nx = me1.x; let ny = me1.y;
+          if (keys['arrowup']) ny -= speed;
+          if (keys['arrowdown']) ny += speed;
+          if (keys['arrowleft']) nx -= speed;
+          if (keys['arrowright']) nx += speed;
+          if (nx !== me1.x || ny !== me1.y) socketRefsRef.current[1]?.emit('move', { x: nx, y: ny });
+        }
       }
 
       const players = stateRef.current.players;
@@ -230,34 +330,14 @@ export default function useGameEngine(opts: UseGameEngineOpts) {
         for (const p of players) { minimapGraphics.beginFill(p.id === myIdRef.current ? 0x00ff00 : 0x2f9cff); const mx = Math.round(p.x * miniScale); const my = Math.round(p.y * miniScale); minimapGraphics.drawRect(mx, my, 4, 4); minimapGraphics.endFill(); }
       } catch (e) {}
 
-      try {
-        const sd = scoreboardDivRef.current as HTMLDivElement | null;
-        if (sd) {
-          sd.style.display = 'none'; // scoreboard toggling handled in parent UI if needed
-          const lb = leaderboardRef.current;
-          let html = `<div style="font-weight:bold;margin-bottom:6px">Score: ${me ? me.score : 0}</div>`;
-          html += '<div style="font-size:12px">Leaderboard</div>';
-          html += '<ol style="margin:4px 0 0 10px;padding:0">';
-          if (lb) {
-            const entries = Object.entries(lb).sort((a, b) => b[1] - a[1]).slice(0, 6);
-            for (const [name, sc] of entries) html += `<li style="color:${name === (me?.name||'') ? '#00ff00' : '#fff'}">${name.slice(0,12)} — ${sc}</li>`;
-          } else {
-            const sorted = [...players].sort((a, b) => b.score - a.score).slice(0, 6);
-            for (const s of sorted) html += `<li style="color:${s.id === myIdRef.current ? '#00ff00' : '#fff'}">${(s.name||'Player').slice(0,12)} — ${s.score}</li>`;
-          }
-          html += '</ol>';
-          html += '<div style="margin-top:8px"><button id="restartBtn">Restart Game</button></div>';
-          sd.innerHTML = html;
-          const btn = document.getElementById('restartBtn'); if (btn) btn.onclick = () => { try { socketRef.current?.emit('restartGame'); } catch (e) {} };
-        }
-      } catch (e) {}
+      // Scoreboard and HUD rendering handled by React. Do not manipulate DOM here.
     });
 
     return () => {
-      try { app.destroy(true, { children: true }); } catch (e) {}
+  try { app.destroy(true, { children: true }); } catch (e) {}
       try { appRef.current = null; } catch (e) {}
-      try { socketRef.current?.disconnect(); } catch (e) {}
-      try { const sd = (scoreboardDivRef && (scoreboardDivRef as any).current) as HTMLDivElement | null; if (sd && containerRef.current) { try { containerRef.current.removeChild(sd); } catch (e) {} } try { if ((window as any).__snowball_scoreboard_ref) (window as any).__snowball_scoreboard_ref.current = null; } catch (e) {} } catch (e) {}
+  try { (socketRefsRef.current || []).forEach((s) => { try { s?.disconnect(); } catch (e) {} }); } catch (e) {}
+  // No DOM cleanup needed for scoreboard; React handles HUD rendering.
       window.removeEventListener('mousemove', mousemoveHandler as any);
       window.removeEventListener('mousedown', mousedownHandler as any);
       window.removeEventListener('keydown', keydownHandler as any);
