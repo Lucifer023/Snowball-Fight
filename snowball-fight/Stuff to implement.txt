@@ -117,6 +117,7 @@ Short-term (implement during Phase 1):
 - Timer option for matches (60/120/180/240/300s or custom/none).
 - Local 2-player support (A above). Make UI for player-specific settings.
 - Team modes: 2v2 local or bots.
+- Add mod, where every time a player wins, more bots are added, one by one. It can be like stages, stage 1 - 1 bot...
 
 Mid-term:
 - Power-ups: spawn randomly, disappear after timeout, include homing snowball, triple throw, screen-darkening item.
@@ -145,6 +146,7 @@ UX / UI Polishing
 - Player setup: if Local players > 1 show separate rows for each player's name & color.
 - Leaderboard: fix CORS and improve visibility and position.
 - Add a small persistent FPS/latency readout (top-right) for debugging.
+- Initial load is taking too much
 
 Backend & Persistence
 ---------------------

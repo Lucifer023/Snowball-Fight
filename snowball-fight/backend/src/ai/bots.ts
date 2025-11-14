@@ -33,16 +33,24 @@ export function tickBots(bots: Player[], humans: Player[], snowballs: Snowball[]
       const nx = bot.x + moveX;
       const ny = bot.y + moveY;
 
-      // simple AABB collision check with obstacles
+      // robust collision check: sample along the segment and check against obstacles expanded by a pad
+      const pad = 12; // approximate bot radius
+      const samples = 5;
       let collides = false;
-      for (const obs of obstacles) {
-        if (nx >= obs.x && nx <= obs.x + obs.w && ny >= obs.y && ny <= obs.y + obs.h) { collides = true; break; }
+      for (let s = 1; s <= samples; s++) {
+        const t = s / samples;
+        const sx = bot.x + (nx - bot.x) * t;
+        const sy = bot.y + (ny - bot.y) * t;
+        for (const obs of obstacles) {
+          if (sx >= obs.x - pad && sx <= obs.x + obs.w + pad && sy >= obs.y - pad && sy <= obs.y + obs.h + pad) { collides = true; break; }
+        }
+        if (collides) break;
       }
 
       if (!collides) {
         bot.x = nx; bot.y = ny;
       } else {
-        // try a simple sidestep: perpendicular left/right vectors
+        // try a simple sidestep: perpendicular left/right vectors, with same sampling check
         const perp1 = { x: -moveY, y: moveX };
         const perp2 = { x: moveY, y: -moveX };
         const len1 = Math.sqrt(perp1.x * perp1.x + perp1.y * perp1.y) || 1;
@@ -51,15 +59,30 @@ export function tickBots(bots: Player[], humans: Player[], snowballs: Snowball[]
         const sy1 = bot.y + (perp1.y / len1) * bSpeed;
         const sx2 = bot.x + (perp2.x / len2) * bSpeed;
         const sy2 = bot.y + (perp2.y / len2) * bSpeed;
-        let placed = false;
         let ok1 = true;
         let ok2 = true;
-        for (const obs of obstacles) {
-          if (sx1 >= obs.x && sx1 <= obs.x + obs.w && sy1 >= obs.y && sy1 <= obs.y + obs.h) ok1 = false;
-          if (sx2 >= obs.x && sx2 <= obs.x + obs.w && sy2 >= obs.y && sy2 <= obs.y + obs.h) ok2 = false;
+        // sample along perp1
+        for (let s = 1; s <= samples; s++) {
+          const t = s / samples;
+          const tx = bot.x + (sx1 - bot.x) * t;
+          const ty = bot.y + (sy1 - bot.y) * t;
+          for (const obs of obstacles) {
+            if (tx >= obs.x - pad && tx <= obs.x + obs.w + pad && ty >= obs.y - pad && ty <= obs.y + obs.h + pad) { ok1 = false; break; }
+          }
+          if (!ok1) break;
         }
-        if (ok1) { bot.x = sx1; bot.y = sy1; placed = true; }
-        else if (ok2) { bot.x = sx2; bot.y = sy2; placed = true; }
+        // sample along perp2
+        for (let s = 1; s <= samples; s++) {
+          const t = s / samples;
+          const tx = bot.x + (sx2 - bot.x) * t;
+          const ty = bot.y + (sy2 - bot.y) * t;
+          for (const obs of obstacles) {
+            if (tx >= obs.x - pad && tx <= obs.x + obs.w + pad && ty >= obs.y - pad && ty <= obs.y + obs.h + pad) { ok2 = false; break; }
+          }
+          if (!ok2) break;
+        }
+        if (ok1) { bot.x = sx1; bot.y = sy1; }
+        else if (ok2) { bot.x = sx2; bot.y = sy2; }
         // if neither sidestep works, bot stays in place this tick
       }
       // occasionally throw when within a reasonable range

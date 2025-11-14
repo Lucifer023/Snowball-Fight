@@ -17,6 +17,10 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 const players = new Map<string, Player>();
 const snowballs: Snowball[] = [];
 const obstacles: Obstacle[] = [];
+// whether a round is currently active (true) or paused/ended waiting for restart (false)
+let roundActive = true;
+// requested bot count to apply on next restart (or immediately if roundActive)
+let pendingBotCount = 0;
 
 // Preset templates: arrays of obstacle shape templates (w,h,hp)
 const OBSTACLE_PRESETS: Array<Array<{ w: number; h: number; hp: number }>> = [
@@ -132,26 +136,35 @@ io.on('connection', (socket) => {
 
   // allow clients to request bot spawns (simple server-side bots/AI)
   socket.on('addBots', (data: { count: number }) => {
-    // treat requested count as an absolute target; create or remove bots
+    // treat requested count as an absolute target; if round is active, apply immediately,
+    // otherwise defer until restart to avoid bots acting while user is deciding to play again.
     const target = Math.max(0, Math.min(6, data.count || 0));
+    pendingBotCount = target;
     const existingBots = Array.from(players.values()).filter((p) => p.isBot);
-    const existingCount = existingBots.length;
-    console.log(`addBots requested: target=${target}, existing=${existingCount}`);
-    if (existingCount < target) {
-      const newBots = createBots(existingBots, target, randomPos);
+    console.log(`addBots requested: target=${target}, existing=${existingBots.length}, roundActive=${roundActive}`);
+    // If round is inactive (paused awaiting restart), don't spawn bots now — just clear any existing bots and wait
+    if (!roundActive) {
+      for (const b of existingBots) {
+        players.delete(b.id);
+        io.emit('playerLeft', { id: b.id });
+      }
+      console.log('round inactive — deferred bot creation until restart');
+      return;
+    }
+    // Round active: replace existing bots immediately
+    for (const b of existingBots) {
+      players.delete(b.id);
+      io.emit('playerLeft', { id: b.id });
+    }
+    if (target > 0) {
+      const newBots = createBots([], target, randomPos);
       for (const b of newBots) {
         players.set(b.id, b);
         io.emit('playerJoined', b);
       }
       console.log(`created ${newBots.length} bot(s), now total bots=${Array.from(players.values()).filter(p=>p.isBot).length}`);
-    } else if (existingCount > target) {
-      const toRemove = existingCount - target;
-      const botsToRemove = existingBots.slice(0, toRemove);
-      for (const b of botsToRemove) {
-        players.delete(b.id);
-        io.emit('playerLeft', { id: b.id });
-      }
-      console.log(`removed ${toRemove} bot(s), now total bots=${Array.from(players.values()).filter(p=>p.isBot).length}`);
+    } else {
+      console.log('no bots requested; cleared existing bots');
     }
   });
 
@@ -204,7 +217,8 @@ io.on('connection', (socket) => {
 
   socket.on('restartGame', () => {
     console.log('restartGame requested by', id);
-    // reset players (health, score, respawn positions)
+    // reactivate round and reset players/obstacles/snowballs
+    roundActive = true;
     for (const [pid, pp] of players) {
       pp.health = 100;
       pp.score = 0;
@@ -212,10 +226,26 @@ io.on('connection', (socket) => {
       pp.x = pos.x;
       pp.y = pos.y;
     }
-    // reset obstacles and snowballs
     snowballs.length = 0;
     obstacles.length = 0;
     obstacles.push(...generateObstacles());
+
+    // spawn any pending bots requested while round was inactive
+    if (pendingBotCount > 0) {
+      // remove any existing bots first to avoid accidental accumulation
+      const existingBots = Array.from(players.values()).filter((p) => p.isBot);
+      for (const b of existingBots) {
+        players.delete(b.id);
+        io.emit('playerLeft', { id: b.id });
+      }
+      const newBots = createBots([], pendingBotCount, randomPos);
+      for (const b of newBots) {
+        players.set(b.id, b);
+        io.emit('playerJoined', b);
+      }
+      console.log(`spawned ${newBots.length} pending bot(s) on restart`);
+    }
+    // broadcast reset state
     io.emit('state', {
       players: Array.from(players.values()),
       snowballs: [],
@@ -228,8 +258,9 @@ io.on('connection', (socket) => {
 const TICK = 1000 / 30;
 setInterval(() => {
   // bot AI: delegate to bots.tickBots
-  const botsArr = Array.from(players.values()).filter((p) => p.isBot) as Player[];
-  const humans = Array.from(players.values()).filter((p) => !p.isBot) as Player[];
+  // Only pass alive bots and alive humans to the AI so dead entities don't act.
+  const botsArr = Array.from(players.values()).filter((p) => p.isBot && p.health > 0) as Player[];
+  const humans = Array.from(players.values()).filter((p) => !p.isBot && p.health > 0) as Player[];
   tickBots(botsArr, humans, snowballs, (sb: Snowball) => {
     snowballs.push(sb);
     io.emit('snowballCreated', { id: sb.id, x: sb.x, y: sb.y });
@@ -274,38 +305,28 @@ setInterval(() => {
         if (owner) owner.score += 1;
         snowballs.splice(i, 1);
 
-        // check for round win (first to reach WIN_SCORE)
-        if (owner) {
+        // Decide round-end policy: if there are bots in the match, use elimination (all bots or all humans dead).
+        // Only use WIN_SCORE "first to" rule when no bots are present.
+        const botExists = Array.from(players.values()).some((pp) => pp.isBot);
+
+        // check for round win (first to reach WIN_SCORE) only when playing without bots
+        if (!botExists && owner) {
           if (owner.score >= WIN_SCORE) {
             const winnerName = owner.name || 'Player';
             console.log('round winner:', winnerName);
             // increment persistent leaderboard by wins
             incrementWinner(winnerName);
             io.emit('leaderboard', getLeaderboard());
-            io.emit('roundWinner', { id: owner.id, name: winnerName });
-            // reset scores and respawn players, reset obstacles and clear snowballs
-            for (const [pid, pp] of players) {
-              pp.score = 0;
-              pp.health = 100;
-              const pos = randomPos();
-              pp.x = pos.x;
-              pp.y = pos.y;
-            }
+            // pause the round and notify clients; actual reset will happen on restart
+            roundActive = false;
+            io.emit('roundEnded', { id: owner.id, name: winnerName });
+            // clear snowballs so no new hits while players decide
             snowballs.length = 0;
-            obstacles.length = 0;
-            obstacles.push(...generateObstacles());
-            // broadcast reset state
-            io.emit('state', {
-              players: Array.from(players.values()),
-              snowballs: [],
-              obstacles: obstacles.map((o) => ({ id: o.id, x: o.x, y: o.y, w: o.w, h: o.h, hp: o.hp })),
-            });
           }
         }
 
-        // elimination-style round end when bots are present: end round when one side is eliminated
-        const botExists = Array.from(players.values()).some((pp) => pp.isBot);
-        if (botExists) {
+  // elimination-style round end when bots are present: end round when one side is eliminated
+  if (botExists) {
           const aliveBots = Array.from(players.values()).filter((pp) => pp.isBot && pp.health > 0).length;
           const aliveHumans = Array.from(players.values()).filter((pp) => !pp.isBot && pp.health > 0).length;
           if (aliveBots === 0 || aliveHumans === 0) {
@@ -325,23 +346,11 @@ setInterval(() => {
               incrementWinner(winnerName);
               io.emit('leaderboard', getLeaderboard());
             }
-            io.emit('roundWinner', { id: owner?.id || '', name: winnerName });
-            // reset state
-            for (const [pid, pp] of players) {
-              pp.score = 0;
-              pp.health = 100;
-              const pos = randomPos();
-              pp.x = pos.x;
-              pp.y = pos.y;
-            }
+            // notify clients round ended and pause the game; clients can show a Play Again dialog
+            roundActive = false;
+            io.emit('roundEnded', { id: owner?.id || '', name: winnerName });
+            // clear snowballs while paused
             snowballs.length = 0;
-            obstacles.length = 0;
-            obstacles.push(...generateObstacles());
-            io.emit('state', {
-              players: Array.from(players.values()),
-              snowballs: [],
-              obstacles: obstacles.map((o) => ({ id: o.id, x: o.x, y: o.y, w: o.w, h: o.h, hp: o.hp })),
-            });
           }
         }
 
@@ -349,7 +358,7 @@ setInterval(() => {
           // if bots are present we treat this as elimination mode (no auto-respawn until round reset)
           const botExistsNow = Array.from(players.values()).some((pp) => pp.isBot);
           if (!botExistsNow) {
-            // respawn after short delay
+            // respawn after short delay for humans
             const deadId = pid;
             setTimeout(() => {
               const pos = randomPos();
@@ -361,8 +370,14 @@ setInterval(() => {
               }
             }, 2000);
           } else {
-            // no respawn during elimination; leave dead until end of round
-            p.health = 0;
+            // during elimination: remove dead bots immediately so they no longer act or appear on the map.
+            if (p.isBot) {
+              players.delete(pid);
+              io.emit('playerLeft', { id: pid });
+            } else {
+              // keep human dead until round reset
+              p.health = 0;
+            }
           }
         }
         break;

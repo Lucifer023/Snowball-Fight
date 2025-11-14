@@ -99,7 +99,20 @@ export default function useGameEngine(opts: UseGameEngineOpts) {
                 color = playerColor === '#2f9cff' ? '#ff6b6b' : '#2f9cff';
               }
               socket.emit('setName', { name, color });
-              if (i === 0) { localStorage.setItem('snowball_name', playerName); localStorage.setItem('snowball_color', playerColor); }
+              if (i === 0) {
+                localStorage.setItem('snowball_name', playerName);
+                localStorage.setItem('snowball_color', playerColor);
+                // ensure bots requested prior to entering the game are applied on init
+                try {
+                  // prefer the explicit current botCount (from props) to avoid race conditions
+                  if (typeof botCount === 'number' && botCount > 0) {
+                    socket.emit('addBots', { count: botCount });
+                    botsRequestedRef.current = botCount;
+                  } else if (botsRequestedRef.current && socket) {
+                    socket.emit('addBots', { count: botsRequestedRef.current });
+                  }
+                } catch (e) {}
+              }
             } catch (e) {}
           });
 
@@ -118,11 +131,37 @@ export default function useGameEngine(opts: UseGameEngineOpts) {
         // keep primary references for backwards compat
         socketRef.current = socketRefsRef.current[0];
         myIdRef.current = myIdsRef.current[0] || null;
+        // expose primary socket on window for legacy UI buttons
+        try { (window as any).__socket_ref = socketRefsRef.current[0]; } catch (e) {}
+
+        // Expose a small resume helper so UI can restart the PIXI ticker after a round end
+        try {
+          (window as any).__resumeGame = () => {
+            const a = appRef.current as PIXI.Application | null;
+            try {
+              if (a && (a as any).ticker) {
+                keysRef.current = {};
+                (a as any).ticker.start();
+              }
+            } catch (e) { }
+          };
+        } catch (e) {}
 
         if (botsRequestedRef.current !== botCount && socketRefsRef.current[0]) {
           botsRequestedRef.current = botCount;
           setTimeout(() => { try { socketRefsRef.current[0].emit('addBots', { count: botCount }); } catch (e) {} }, 300);
         }
+        // listen for roundEnded events (server-side pause). Pause the ticker and show overlay via setRoundWinner
+        socketRefsRef.current[0].on('roundEnded', (data: { id?: string; name?: string }) => {
+          try {
+            setRoundWinner(data?.name || null);
+            const a = appRef.current as PIXI.Application | null;
+            if (a && (a as any).ticker) {
+              (a as any).ticker.stop();
+              keysRef.current = {};
+            }
+          } catch (e) {}
+        });
       } catch (err) {
         console.error('failed to load socket.io-client in the browser', err);
       }
