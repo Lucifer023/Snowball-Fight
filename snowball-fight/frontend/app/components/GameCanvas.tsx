@@ -21,7 +21,7 @@ export default function GameCanvas() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  const { containerRef } = useGameEngine({
+  const { containerRef, socketRef, resumeGame } = useGameEngine({
     started,
     playerName,
     playerColor,
@@ -117,8 +117,8 @@ export default function GameCanvas() {
             <h2 style={{ marginBottom: 10 }}>Round Winner</h2>
             <div style={{ fontSize: 20, marginBottom: 16 }}>The player <strong>{roundWinner}</strong> won the snow match.</div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-              <button onClick={() => { try { (window as any).__socket_ref?.emit('restartGame'); } catch(e){}; try { (window as any).__resumeGame?.(); } catch (e) {}; setRoundWinner(null); }} style={{ padding: '8px 12px' }}>Restart</button>
-              <button onClick={() => { try { (window as any).__socket_ref?.emit('restartGame'); } catch(e){}; try { (window as any).__resumeGame?.(); } catch (e) {}; setRoundWinner(null); setStarted(false); }} style={{ padding: '8px 12px' }}>Close</button>
+              <button onClick={() => { try { socketRef.current?.emit('restartGame'); } catch(e){}; try { resumeGame(); } catch (e) {}; setRoundWinner(null); }} style={{ padding: '8px 12px' }}>Restart</button>
+              <button onClick={() => { try { socketRef.current?.emit('restartGame'); } catch(e){}; try { resumeGame(); } catch (e) {}; setRoundWinner(null); setStarted(false); }} style={{ padding: '8px 12px' }}>Close</button>
             </div>
           </div>
         </div>

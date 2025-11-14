@@ -131,21 +131,6 @@ export default function useGameEngine(opts: UseGameEngineOpts) {
         // keep primary references for backwards compat
         socketRef.current = socketRefsRef.current[0];
         myIdRef.current = myIdsRef.current[0] || null;
-        // expose primary socket on window for legacy UI buttons
-        try { (window as any).__socket_ref = socketRefsRef.current[0]; } catch (e) {}
-
-        // Expose a small resume helper so UI can restart the PIXI ticker after a round end
-        try {
-          (window as any).__resumeGame = () => {
-            const a = appRef.current as PIXI.Application | null;
-            try {
-              if (a && (a as any).ticker) {
-                keysRef.current = {};
-                (a as any).ticker.start();
-              }
-            } catch (e) { }
-          };
-        } catch (e) {}
 
         if (botsRequestedRef.current !== botCount && socketRefsRef.current[0]) {
           botsRequestedRef.current = botCount;
@@ -162,6 +147,7 @@ export default function useGameEngine(opts: UseGameEngineOpts) {
             }
           } catch (e) {}
         });
+        
       } catch (err) {
         console.error('failed to load socket.io-client in the browser', err);
       }
@@ -401,5 +387,16 @@ export default function useGameEngine(opts: UseGameEngineOpts) {
     }
   }, [showEscapeConfirm]);
 
-  return { containerRef, continueBtnRef, appRef, socketRef };
+  // resume helper usable by UI components
+  const resumeGame = () => {
+    const a = appRef.current as PIXI.Application | null;
+    try {
+      if (a && (a as any).ticker) {
+        keysRef.current = {};
+        (a as any).ticker.start();
+      }
+    } catch (e) {}
+  };
+
+  return { containerRef, continueBtnRef, appRef, socketRef, resumeGame };
 }
