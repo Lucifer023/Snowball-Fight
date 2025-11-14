@@ -5,7 +5,7 @@ import { Player, Snowball } from '../models/types';
  * This module does not mutate the global `players` map directly; instead it
  * operates on arrays passed in by the caller to make testing easier.
  */
-export function tickBots(bots: Player[], humans: Player[], snowballs: Snowball[], addSnowball: (s: Snowball) => void) {
+export function tickBots(bots: Player[], humans: Player[], snowballs: Snowball[], addSnowball: (s: Snowball) => void, obstacles: import('../models/types').Obstacle[] = []) {
   for (const bot of bots) {
     if (humans.length === 0) break;
     // find nearest human
@@ -22,12 +22,46 @@ export function tickBots(bots: Player[], humans: Player[], snowballs: Snowball[]
     }
     // move toward target
     const bSpeed = 1.8;
-    try {
+      try {
       const dx = target.x - bot.x;
       const dy = target.y - bot.y;
       const len = Math.sqrt(dx * dx + dy * dy) || 1;
-      bot.x += (dx / len) * bSpeed;
-      bot.y += (dy / len) * bSpeed;
+      const moveX = (dx / len) * bSpeed;
+      const moveY = (dy / len) * bSpeed;
+
+      // candidate new position
+      const nx = bot.x + moveX;
+      const ny = bot.y + moveY;
+
+      // simple AABB collision check with obstacles
+      let collides = false;
+      for (const obs of obstacles) {
+        if (nx >= obs.x && nx <= obs.x + obs.w && ny >= obs.y && ny <= obs.y + obs.h) { collides = true; break; }
+      }
+
+      if (!collides) {
+        bot.x = nx; bot.y = ny;
+      } else {
+        // try a simple sidestep: perpendicular left/right vectors
+        const perp1 = { x: -moveY, y: moveX };
+        const perp2 = { x: moveY, y: -moveX };
+        const len1 = Math.sqrt(perp1.x * perp1.x + perp1.y * perp1.y) || 1;
+        const len2 = Math.sqrt(perp2.x * perp2.x + perp2.y * perp2.y) || 1;
+        const sx1 = bot.x + (perp1.x / len1) * bSpeed;
+        const sy1 = bot.y + (perp1.y / len1) * bSpeed;
+        const sx2 = bot.x + (perp2.x / len2) * bSpeed;
+        const sy2 = bot.y + (perp2.y / len2) * bSpeed;
+        let placed = false;
+        let ok1 = true;
+        let ok2 = true;
+        for (const obs of obstacles) {
+          if (sx1 >= obs.x && sx1 <= obs.x + obs.w && sy1 >= obs.y && sy1 <= obs.y + obs.h) ok1 = false;
+          if (sx2 >= obs.x && sx2 <= obs.x + obs.w && sy2 >= obs.y && sy2 <= obs.y + obs.h) ok2 = false;
+        }
+        if (ok1) { bot.x = sx1; bot.y = sy1; placed = true; }
+        else if (ok2) { bot.x = sx2; bot.y = sy2; placed = true; }
+        // if neither sidestep works, bot stays in place this tick
+      }
       // occasionally throw when within a reasonable range
       if (Math.random() < 0.02) {
         const speed = 6;

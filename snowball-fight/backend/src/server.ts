@@ -233,7 +233,8 @@ setInterval(() => {
   tickBots(botsArr, humans, snowballs, (sb: Snowball) => {
     snowballs.push(sb);
     io.emit('snowballCreated', { id: sb.id, x: sb.x, y: sb.y });
-  });
+  }, obstacles);
+  // NOTE: previous call pushed snowballs in callback; updated tickBots signature accepts obstacles for avoidance
   // update snowballs
   for (let i = snowballs.length - 1; i >= 0; i--) {
     const sb = snowballs[i];

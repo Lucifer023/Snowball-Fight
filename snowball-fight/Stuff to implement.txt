@@ -205,6 +205,12 @@ Notes from user (kept for reference)
 - Improve obstacle HP reset at new game start.
 - Investigate lag when multiple bots/players present.
 - Enter the game, destroy all obstacles, enter new game, there are zero obstacles. The expected behavior is to every new game have new obstacles on different locations.
+- When I am standing, not moving, I feel like fps drops.
+- Implement: 
+Upgrade to proper pathfinding (A* on a coarse grid or navmesh) so bots can navigate complex obstacle layouts and chase players around obstacles reliably.
+Improve sidestep logic: try multiple offset distances and prefer the one that reduces distance to the target.
+Add obstacle-avoidance when spawning obstacles (ensure not spawned on players) — I already added randomized presets; I can add exclusion radii next.
+Run an end-to-end test with the frontend, verify bots no longer pass through obstacles and behave acceptably.
 
 Visual Identity
 
