@@ -40,6 +40,7 @@ export default function useGameEngine(opts: UseGameEngineOpts) {
   const continueBtnRef = useRef<HTMLButtonElement | null>(null);
   // keysRef is used across effects/handlers so we can clear it when the game is paused
   const keysRef = useRef<Record<string, boolean>>({});
+  const effectCleanupRef = useRef<Array<() => void>>([]);
 
   useEffect(() => {
     if (!started) return;
@@ -132,10 +133,46 @@ export default function useGameEngine(opts: UseGameEngineOpts) {
         socketRef.current = socketRefsRef.current[0];
         myIdRef.current = myIdsRef.current[0] || null;
 
+        // helper: send addBots with retry/backoff until server acknowledges via 'botsSet'
+        const maxRetries = 5;
+        const sendAddBots = (count: number) => {
+          botsRequestedRef.current = count;
+          let attempts = 0;
+          let aborted = false;
+          const attempt = () => {
+            if (aborted) return;
+            attempts++;
+            try { socketRefsRef.current[0]?.emit('addBots', { count }); } catch (e) {}
+            if (attempts >= maxRetries) {
+              // give up after max retries
+              return;
+            }
+            const timeout = Math.min(1000 * Math.pow(2, attempts), 5000);
+            setTimeout(() => { if (!aborted) attempt(); }, timeout);
+          };
+          attempt();
+          // return cancel function
+          return () => { aborted = true; };
+        };
+
+        // if requested bot count changed, start a send (the sendAddBots handles retries)
+        let cancelBotsSend: (() => void) | null = null;
         if (botsRequestedRef.current !== botCount && socketRefsRef.current[0]) {
-          botsRequestedRef.current = botCount;
-          setTimeout(() => { try { socketRefsRef.current[0].emit('addBots', { count: botCount }); } catch (e) {} }, 300);
+          cancelBotsSend = sendAddBots(botCount);
         }
+
+        // listen for ack from server to stop retrying
+        const onBotsSet = (data: { count: number; applied: boolean }) => {
+          try {
+            // if server applied or deferred, clear pending attempts
+            botsRequestedRef.current = data.count;
+            if (cancelBotsSend) { cancelBotsSend(); cancelBotsSend = null; }
+          } catch (e) {}
+        };
+        socketRefsRef.current[0].on('botsSet', onBotsSet);
+        // register cleanup functions so they can be removed on effect teardown
+        effectCleanupRef.current.push(() => { try { socketRefsRef.current[0]?.off('botsSet', onBotsSet); } catch (e) {} });
+        effectCleanupRef.current.push(() => { try { if (cancelBotsSend) cancelBotsSend(); } catch (e) {} });
         // listen for roundEnded events (server-side pause). Pause the ticker and show overlay via setRoundWinner
         socketRefsRef.current[0].on('roundEnded', (data: { id?: string; name?: string }) => {
           try {
@@ -147,6 +184,7 @@ export default function useGameEngine(opts: UseGameEngineOpts) {
             }
           } catch (e) {}
         });
+        // cleanup for botsSet and any pending send attempts in effect teardown below
         
       } catch (err) {
         console.error('failed to load socket.io-client in the browser', err);
@@ -359,6 +397,8 @@ export default function useGameEngine(opts: UseGameEngineOpts) {
     });
 
     return () => {
+      // run any cleanup functions registered during the async setup
+      try { (effectCleanupRef.current || []).forEach((fn) => { try { fn(); } catch (e) {} }); } catch (e) {}
   try { app.destroy(true, { children: true }); } catch (e) {}
       try { appRef.current = null; } catch (e) {}
   try { (socketRefsRef.current || []).forEach((s) => { try { s?.disconnect(); } catch (e) {} }); } catch (e) {}

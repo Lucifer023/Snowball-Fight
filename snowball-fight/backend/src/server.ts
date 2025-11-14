@@ -149,6 +149,8 @@ io.on('connection', (socket) => {
         io.emit('playerLeft', { id: b.id });
       }
       console.log('round inactive — deferred bot creation until restart');
+      // ack the requester that bots are recorded but deferred
+      try { socket.emit('botsSet', { count: target, applied: false }); } catch (e) {}
       return;
     }
     // Round active: replace existing bots immediately
@@ -163,8 +165,10 @@ io.on('connection', (socket) => {
         io.emit('playerJoined', b);
       }
       console.log(`created ${newBots.length} bot(s), now total bots=${Array.from(players.values()).filter(p=>p.isBot).length}`);
+      try { socket.emit('botsSet', { count: target, applied: true }); } catch (e) {}
     } else {
       console.log('no bots requested; cleared existing bots');
+      try { socket.emit('botsSet', { count: 0, applied: true }); } catch (e) {}
     }
   });
 
@@ -244,6 +248,8 @@ io.on('connection', (socket) => {
         io.emit('playerJoined', b);
       }
       console.log(`spawned ${newBots.length} pending bot(s) on restart`);
+      // broadcast an ack to all clients that bot count was applied
+      io.emit('botsSet', { count: pendingBotCount, applied: true });
     }
     // broadcast reset state
     io.emit('state', {
