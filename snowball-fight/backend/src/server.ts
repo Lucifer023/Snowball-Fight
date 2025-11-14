@@ -21,6 +21,8 @@ const obstacles: Obstacle[] = [];
 let roundActive = true;
 // requested bot count to apply on next restart (or immediately if roundActive)
 let pendingBotCount = 0;
+// host/owner of the current match (socket id)
+let hostId: string | null = null;
 
 // Preset templates: arrays of obstacle shape templates (w,h,hp)
 const OBSTACLE_PRESETS: Array<Array<{ w: number; h: number; hp: number }>> = [
@@ -109,8 +111,16 @@ io.on('connection', (socket) => {
     snowballs: snowballs.map((s) => ({ id: s.id, x: s.x, y: s.y })),
     obstacles: obstacles.map((o) => ({ id: o.id, x: o.x, y: o.y, w: o.w, h: o.h, hp: o.hp })),
     leaderboard: getLeaderboard(),
+    hostId,
   });
   io.emit('playerJoined', player);
+
+  // assign host if none exists and this is a human player
+  if (!hostId && !player.isBot) {
+    hostId = id;
+    console.log('assigned host:', hostId);
+    io.emit('hostAssigned', { id: hostId });
+  }
 
   socket.on('move', (data: { x: number; y: number }) => {
     const p = players.get(id);
@@ -136,6 +146,11 @@ io.on('connection', (socket) => {
 
   // allow clients to request bot spawns (simple server-side bots/AI)
   socket.on('addBots', (data: { count: number }) => {
+    // only host can change bot counts
+    if (hostId && socket.id !== hostId) {
+      try { socket.emit('notAuthorized', { action: 'addBots' }); } catch (e) {}
+      return;
+    }
     // treat requested count as an absolute target; if round is active, apply immediately,
     // otherwise defer until restart to avoid bots acting while user is deciding to play again.
     const target = Math.max(0, Math.min(6, data.count || 0));
@@ -217,9 +232,21 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     players.delete(id);
     io.emit('playerLeft', { id });
+    // if host disconnected, promote next human player as host
+    if (hostId === id) {
+      const next = Array.from(players.values()).find((p) => !p.isBot);
+      hostId = next ? next.id : null;
+      console.log('host changed to', hostId);
+      io.emit('hostAssigned', { id: hostId });
+    }
   });
 
   socket.on('restartGame', () => {
+    // only host may restart
+    if (hostId && socket.id !== hostId) {
+      try { socket.emit('notAuthorized', { action: 'restartGame' }); } catch (e) {}
+      return;
+    }
     console.log('restartGame requested by', id);
     // reactivate round and reset players/obstacles/snowballs
     roundActive = true;
